@@ -1,0 +1,258 @@
+{% extends "base.html" %}
+
+{% block title %}대시보드 - QR 스캔 관리 시스템{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">대시보드</h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="location.reload()">
+            <i class="bi bi-arrow-clockwise"></i> 새로고침
+        </button>
+    </div>
+</div>
+
+<!-- 통계 카드 -->
+<div class="row">
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-left-primary shadow h-100 py-2">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">전체 문서</div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ stats.total }}</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="bi bi-file-earmark-text fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-left-warning shadow h-100 py-2">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">대기중</div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ stats.pending }}</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="bi bi-hourglass-split fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-left-success shadow h-100 py-2">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-success text-uppercase mb-1">업로드 완료</div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ stats.uploaded }}</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="bi bi-check-circle fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-left-danger shadow h-100 py-2">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-danger text-uppercase mb-1">오류</div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ stats.error }}</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="bi bi-exclamation-triangle fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 현재 설정 정보 -->
+<div class="row">
+    <div class="col-lg-6 mb-4">
+        <div class="card shadow mb-4">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">시스템 설정</h6>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tr>
+                        <td><strong>스캐너 출력 폴더:</strong></td>
+                        <td>{{ config.paths.scanner_output }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>데이터 저장 폴더:</strong></td>
+                        <td>{{ config.paths.data_root }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>감시 모드:</strong></td>
+                        <td>{{ config.watcher.mode }}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>배치 처리 모드:</strong></td>
+                        <td>
+                            {% if config.batch.trigger_mode == 'idle' %}
+                                유휴 시간 ({{ config.batch.idle_minutes }}분)
+                            {% else %}
+                                스케줄 ({{ config.batch.schedule }})
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><strong>업로드 타입:</strong></td>
+                        <td>{{ config.upload.type|upper }}</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6 mb-4">
+        <div class="card shadow mb-4">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">최근 처리 문서</h6>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm" id="recent-docs">
+                        <thead>
+                            <tr>
+                                <th>운송번호</th>
+                                <th>상태</th>
+                                <th>처리시간</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- 동적으로 로드됨 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 처리 큐 정보 -->
+<div class="row">
+    <div class="col-12">
+        <div class="card shadow mb-4">
+            <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                <h6 class="m-0 font-weight-bold text-primary">처리 큐 상태</h6>
+                <button class="btn btn-sm btn-primary" onclick="forceBatch()">
+                    <i class="bi bi-play-fill"></i> 지금 실행
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <p><strong>업로드 대기:</strong> <span id="upload-queue">{{ stats.retry_queue }}</span>건</p>
+                    </div>
+                    <div class="col-md-4">
+                        <p><strong>병합 대기:</strong> <span id="merge-pending">{{ stats.pending }}</span>건</p>
+                    </div>
+                    <div class="col-md-4">
+                        <p><strong>재시도 대기:</strong> <span id="retry-queue">0</span>건</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .card {
+        border: none;
+        border-radius: 0.35rem;
+    }
+    .card-header {
+        background-color: #f8f9fc;
+        border-bottom: 1px solid #e3e6f0;
+    }
+    .border-left-primary {
+        border-left: 0.25rem solid #4e73df!important;
+    }
+    .border-left-success {
+        border-left: 0.25rem solid #1cc88a!important;
+    }
+    .border-left-warning {
+        border-left: 0.25rem solid #f6c23e!important;
+    }
+    .border-left-danger {
+        border-left: 0.25rem solid #e74a3b!important;
+    }
+    .text-xs {
+        font-size: .7rem;
+    }
+    .text-gray-800 {
+        color: #5a5c69!important;
+    }
+    .text-gray-300 {
+        color: #dddfeb!important;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // 최근 문서 로드
+    function loadRecentDocs() {
+        fetch('/api/recent')
+            .then(response => response.json())
+            .then(docs => {
+                const tbody = document.querySelector('#recent-docs tbody');
+                tbody.innerHTML = '';
+                
+                docs.forEach(doc => {
+                    const row = tbody.insertRow();
+                    row.innerHTML = `
+                        <td>${doc.transport_no || '-'}</td>
+                        <td><span class="badge bg-${getStatusColor(doc.status)}">${doc.status}</span></td>
+                        <td>${new Date(doc.created_at).toLocaleString('ko-KR')}</td>
+                    `;
+                });
+            });
+    }
+
+    function getStatusColor(status) {
+        const colors = {
+            'PENDING': 'warning',
+            'PROCESSING': 'info',
+            'MERGED': 'primary',
+            'UPLOADED': 'success',
+            'ERROR': 'danger'
+        };
+        return colors[status] || 'secondary';
+    }
+
+    // 통계 업데이트
+    function updateStats() {
+        fetch('/api/stats')
+            .then(response => response.json())
+            .then(data => {
+                // 큐 정보 업데이트
+                document.getElementById('upload-queue').textContent = data.queue.upload;
+                document.getElementById('retry-queue').textContent = data.queue.retry;
+                document.getElementById('merge-pending').textContent = data.total.pending;
+            });
+    }
+
+    // 초기 로드 및 주기적 업데이트
+    loadRecentDocs();
+    updateStats();
+    
+    setInterval(loadRecentDocs, 10000); // 10초마다
+    setInterval(updateStats, 5000); // 5초마다
+</script>
+{% endblock %}

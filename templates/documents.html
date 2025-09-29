@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+
+{% block title %}문서 목록 - QR 스캔 관리 시스템{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">문서 목록</h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <div class="btn-group me-2">
+            <a href="/documents" class="btn btn-sm btn-outline-secondary {% if not status_filter %}active{% endif %}">전체</a>
+            <a href="/documents?status=PENDING" class="btn btn-sm btn-outline-secondary {% if status_filter == 'PENDING' %}active{% endif %}">대기중</a>
+            <a href="/documents?status=MERGED" class="btn btn-sm btn-outline-secondary {% if status_filter == 'MERGED' %}active{% endif %}">병합됨</a>
+            <a href="/documents?status=UPLOADED" class="btn btn-sm btn-outline-secondary {% if status_filter == 'UPLOADED' %}active{% endif %}">업로드됨</a>
+            <a href="/documents?status=ERROR" class="btn btn-sm btn-outline-secondary {% if status_filter == 'ERROR' %}active{% endif %}">오류</a>
+        </div>
+    </div>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-striped table-hover">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>운송번호</th>
+                <th>파일명</th>
+                <th>상태</th>
+                <th>페이지</th>
+                <th>크기</th>
+                <th>생성일시</th>
+                <th>처리일시</th>
+                <th>작업</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for doc in documents %}
+            <tr>
+                <td>{{ doc.id }}</td>
+                <td>
+                    {% if doc.transport_no %}
+                        <code>{{ doc.transport_no }}</code>
+                    {% elif doc.manual_transport_no %}
+                        <code>{{ doc.manual_transport_no }}</code> <span class="badge bg-info">수동</span>
+                    {% else %}
+                        <span class="text-muted">-</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <small>{{ doc.original_filename }}</small>
+                    {% if doc.qr_count > 1 %}
+                        <span class="badge bg-warning">QR {{ doc.qr_count }}개</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <span class="badge bg-{{ get_status_color(doc.status) }}">{{ doc.status }}</span>
+                </td>
+                <td>{{ doc.page_count or '-' }}</td>
+                <td>{{ format_file_size(doc.file_size) }}</td>
+                <td><small>{{ doc.created_at.strftime('%Y-%m-%d %H:%M:%S') if doc.created_at else '-' }}</small></td>
+                <td><small>{{ doc.processed_at.strftime('%Y-%m-%d %H:%M:%S') if doc.processed_at else '-' }}</small></td>
+                <td>
+                    {% if doc.status == 'ERROR' and doc.error_message %}
+                        <button class="btn btn-sm btn-outline-danger" onclick="showError('{{ doc.error_message }}')">
+                            <i class="bi bi-info-circle"></i>
+                        </button>
+                    {% endif %}
+                    {% if doc.merged_file_path %}
+                        <button class="btn btn-sm btn-outline-primary" onclick="showPath('{{ doc.merged_file_path }}')">
+                            <i class="bi bi-folder2-open"></i>
+                        </button>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if not documents %}
+<div class="alert alert-info text-center">
+    문서가 없습니다.
+</div>
+{% endif %}
+
+<!-- 에러 모달 -->
+<div class="modal fade" id="errorModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">오류 상세</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p id="errorMessage"></p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 경로 모달 -->
+<div class="modal fade" id="pathModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">파일 경로</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p id="filePath"></p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function get_status_color(status) {
+        const colors = {
+            'PENDING': 'warning',
+            'PROCESSING': 'info',
+            'MERGED': 'primary',
+            'UPLOADED': 'success',
+            'ERROR': 'danger',
+            'RETRY': 'secondary'
+        };
+        return colors[status] || 'secondary';
+    }
+
+    function format_file_size(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    function showError(message) {
+        document.getElementById('errorMessage').textContent = message;
+        new bootstrap.Modal(document.getElementById('errorModal')).show();
+    }
+
+    function showPath(path) {
+        document.getElementById('filePath').textContent = path;
+        new bootstrap.Modal(document.getElementById('pathModal')).show();
+    }
+
+    // Jinja2 필터를 JavaScript 함수로 정의
+    window.get_status_color = get_status_color;
+    window.format_file_size = format_file_size;
+</script>
+{% endblock %}

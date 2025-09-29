@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+
+{% block title %}오류 관리 - QR 스캔 관리 시스템{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">오류 관리</h1>
+</div>
+
+<!-- DB 오류 문서 -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">오류 상태 문서</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>파일명</th>
+                        <th>오류 메시지</th>
+                        <th>QR 정보</th>
+                        <th>생성일시</th>
+                        <th>작업</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for doc in error_docs %}
+                    <tr>
+                        <td>{{ doc.id }}</td>
+                        <td><small>{{ doc.original_filename }}</small></td>
+                        <td><small class="text-danger">{{ doc.error_message or '-' }}</small></td>
+                        <td>
+                            {% if doc.qr_values %}
+                                {% set qr_list = doc.qr_values|from_json %}
+                                {% for qr in qr_list %}
+                                    <code>{{ qr }}</code><br>
+                                {% endfor %}
+                            {% else %}
+                                <span class="text-muted">없음</span>
+                            {% endif %}
+                        </td>
+                        <td><small>{{ doc.created_at.strftime('%Y-%m-%d %H:%M') }}</small></td>
+                        <td>
+                            <button class="btn btn-sm btn-primary" onclick="showReprocessModal('{{ doc.file_path }}', '{{ doc.qr_values }}')">
+                                <i class="bi bi-arrow-repeat"></i> 재처리
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        
+        {% if not error_docs %}
+        <p class="text-center text-muted mb-0">오류 상태의 문서가 없습니다.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 오류 폴더 파일 -->
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">오류 폴더 파일</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover">
+                <thead>
+                    <tr>
+                        <th>파일명</th>
+                        <th>오류 메시지</th>
+                        <th>이동 시간</th>
+                        <th>작업</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for file in error_files %}
+                    <tr>
+                        <td><small>{{ file.name }}</small></td>
+                        <td><small class="text-danger">{{ file.error_message or '-' }}</small></td>
+                        <td><small>{{ file.moved_at or '-' }}</small></td>
+                        <td>
+                            <button class="btn btn-sm btn-primary" onclick="showReprocessModal('{{ file.path }}', '')">
+                                <i class="bi bi-arrow-repeat"></i> 재처리
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        
+        {% if not error_files %}
+        <p class="text-center text-muted mb-0">오류 폴더에 파일이 없습니다.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 재처리 모달 -->
+<div class="modal fade" id="reprocessModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form id="reprocessForm">
+                <div class="modal-header">
+                    <h5 class="modal-title">파일 재처리</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>이 파일을 재처리하려면 운송번호를 입력하세요.</p>
+                    
+                    <div id="qrSuggestions" class="alert alert-info" style="display: none;">
+                        <small>검출된 QR 코드:</small>
+                        <div id="qrList"></div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="transportNo" class="form-label">운송번호 (14자리)</label>
+                        <input type="text" class="form-control" id="transportNo" name="transport_no" 
+                               pattern="\d{14}" maxlength="14" required
+                               placeholder="예: 20250929000001">
+                        <div class="form-text">정확히 14자리 숫자를 입력하세요.</div>
+                    </div>
+                    
+                    <input type="hidden" id="filePath" name="file_path">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+                    <button type="submit" class="btn btn-primary">재처리</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // JSON 파싱 필터
+    function from_json(str) {
+        try {
+            return JSON.parse(str);
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function showReprocessModal(filePath, qrValues) {
+        document.getElementById('filePath').value = filePath;
+        
+        // QR 제안 표시
+        if (qrValues) {
+            const qrs = from_json(qrValues);
+            if (qrs.length > 0) {
+                document.getElementById('qrSuggestions').style.display = 'block';
+                const qrList = document.getElementById('qrList');
+                qrList.innerHTML = '';
+                
+                qrs.forEach(qr => {
+                    const btn = document.createElement('button');
+                    btn.className = 'btn btn-sm btn-outline-primary me-2 mb-2';
+                    btn.textContent = qr;
+                    btn.onclick = function() {
+                        document.getElementById('transportNo').value = qr;
+                    };
+                    qrList.appendChild(btn);
+                });
+            }
+        } else {
+            document.getElementById('qrSuggestions').style.display = 'none';
+        }
+        
+        new bootstrap.Modal(document.getElementById('reprocessModal')).show();
+    }
+
+    // 재처리 폼 제출
+    document.getElementById('reprocessForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const formData = new FormData(this);
+        const filePath = formData.get('file_path');
+        const transportNo = formData.get('transport_no');
+        
+        try {
+            const response = await fetch(`/reprocess/${encodeURIComponent(filePath)}`, {
+                method: 'POST',
+                body: formData
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                alert('재처리가 시작되었습니다.');
+                location.reload();
+            } else {
+                alert('오류: ' + result.message);
+            }
+        } catch (error) {
+            alert('요청 처리 중 오류가 발생했습니다.');
+        }
+    });
+
+    // Jinja2 필터를 JavaScript 함수로 정의
+    window.from_json = from_json;
+</script>
+{% endblock %}
