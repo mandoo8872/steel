@@ -117,6 +117,142 @@
                     </div>
                 </div>
             </div>
+            
+            <!-- QR 엔진 설정 -->
+            <hr class="my-4">
+            <h6 class="mb-3">QR 인식 엔진 설정</h6>
+            
+            <!-- 엔진 순서 설정 -->
+            <div class="mb-3">
+                <label class="form-label">엔진 처리 순서</label>
+                <div id="engineOrderList" class="list-group">
+                    <!-- JavaScript로 동적 생성 -->
+                </div>
+                <div class="form-text">드래그하여 순서를 변경할 수 있습니다</div>
+            </div>
+            
+            <!-- 각 엔진별 설정 -->
+            <div class="row mt-4">
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" id="zbar_enabled" name="zbar_enabled" {% if config.qr.zbar.enabled %}checked{% endif %}>
+                                <label class="form-check-label" for="zbar_enabled">
+                                    <strong>ZBar 엔진</strong>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <p class="small text-muted">기본 엔진, 빠른 처리</p>
+                            <div class="mb-2">
+                                <label for="zbar_timeout" class="form-label small">타임아웃 (초)</label>
+                                <input type="number" class="form-control form-control-sm" id="zbar_timeout" name="zbar_timeout" 
+                                       value="{{ config.qr.zbar.timeout }}" min="1" max="300">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" id="zxing_enabled" name="zxing_enabled" {% if config.qr.zxing.enabled %}checked{% endif %}>
+                                <label class="form-check-label" for="zxing_enabled">
+                                    <strong>ZXing 엔진</strong>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <p class="small text-muted">구글 기반, 기울기·훼손 QR에 강함</p>
+                            <div class="mb-2">
+                                <label for="zxing_timeout" class="form-label small">타임아웃 (초)</label>
+                                <input type="number" class="form-control form-control-sm" id="zxing_timeout" name="zxing_timeout" 
+                                       value="{{ config.qr.zxing.timeout }}" min="1" max="300">
+                            </div>
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" id="zxing_try_harder" name="zxing_try_harder" 
+                                       {% if config.qr.zxing.options.get('try_harder', False) %}checked{% endif %}>
+                                <label class="form-check-label small" for="zxing_try_harder">
+                                    정밀 검색 모드
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" id="pyzbar_preproc_enabled" name="pyzbar_preproc_enabled" 
+                                       {% if config.qr.pyzbar_preproc.enabled %}checked{% endif %}>
+                                <label class="form-check-label" for="pyzbar_preproc_enabled">
+                                    <strong>Pyzbar + OpenCV</strong>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <p class="small text-muted">전처리 강화, 대비 낮은/번진 QR</p>
+                            <div class="mb-2">
+                                <label for="pyzbar_preproc_timeout" class="form-label small">타임아웃 (초)</label>
+                                <input type="number" class="form-control form-control-sm" id="pyzbar_preproc_timeout" name="pyzbar_preproc_timeout" 
+                                       value="{{ config.qr.pyzbar_preproc.timeout }}" min="1" max="300">
+                            </div>
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" id="pp_adaptive_threshold" name="pp_adaptive_threshold" 
+                                       {% if config.qr.pyzbar_preproc.options.get('adaptive_threshold', False) %}checked{% endif %}>
+                                <label class="form-check-label small" for="pp_adaptive_threshold">
+                                    적응형 임계값
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" id="pp_deskew" name="pp_deskew" 
+                                       {% if config.qr.pyzbar_preproc.options.get('deskew', False) %}checked{% endif %}>
+                                <label class="form-check-label small" for="pp_deskew">
+                                    기울기 보정
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" id="pp_sharpen" name="pp_sharpen" 
+                                       {% if config.qr.pyzbar_preproc.options.get('sharpen', False) %}checked{% endif %}>
+                                <label class="form-check-label small" for="pp_sharpen">
+                                    선명화
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" id="pp_blur_removal" name="pp_blur_removal" 
+                                       {% if config.qr.pyzbar_preproc.options.get('blur_removal', False) %}checked{% endif %}>
+                                <label class="form-check-label small" for="pp_blur_removal">
+                                    블러 제거
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 실패 이미지 저장 설정 -->
+            <hr class="my-4">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="form-check mb-3">
+                        <input type="checkbox" class="form-check-input" id="save_failed_images" name="save_failed_images" 
+                               {% if config.qr.save_failed_images %}checked{% endif %}>
+                        <label class="form-check-label" for="save_failed_images">
+                            QR 인식 실패 이미지 저장 (디버깅용)
+                        </label>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="failed_images_path" class="form-label">실패 이미지 저장 경로</label>
+                        <input type="text" class="form-control" id="failed_images_path" name="failed_images_path" 
+                               value="{{ config.qr.failed_images_path }}">
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -239,10 +375,102 @@
     document.getElementById('upload_type').addEventListener('change', toggleUploadSettings);
     toggleUploadSettings();
     
-    // 설정 저장
+    // 엔진 순서 데이터
+    let engineOrder = {{ config.qr.engine_order | tojson }};
+    const engineNames = {
+        'ZBAR': 'ZBar (빠른 기본 엔진)',
+        'ZXING': 'ZXing (기울기/훼손 대응)',
+        'PYZBAR_PREPROC': 'Pyzbar + OpenCV (전처리 강화)'
+    };
+    
+    // 페이지 로드 시 엔진 순서 표시
+    document.addEventListener('DOMContentLoaded', function() {
+        updateEngineOrderDisplay();
+        initDragAndDrop();
+    });
+    
+    // 엔진 순서 표시 업데이트
+    function updateEngineOrderDisplay() {
+        const container = document.getElementById('engineOrderList');
+        container.innerHTML = '';
+        
+        engineOrder.forEach((engine, index) => {
+            const item = document.createElement('div');
+            item.className = 'list-group-item d-flex justify-content-between align-items-center';
+            item.draggable = true;
+            item.dataset.engine = engine;
+            item.innerHTML = `
+                <div>
+                    <span class="badge bg-secondary me-2">${index + 1}</span>
+                    <strong>${engine}</strong>
+                    <small class="text-muted ms-2">${engineNames[engine]}</small>
+                </div>
+                <i class="bi bi-grip-vertical text-muted"></i>
+            `;
+            container.appendChild(item);
+        });
+    }
+    
+    // 드래그 앤 드롭 초기화
+    function initDragAndDrop() {
+        const container = document.getElementById('engineOrderList');
+        let draggedItem = null;
+        
+        container.addEventListener('dragstart', function(e) {
+            if (e.target.classList.contains('list-group-item')) {
+                draggedItem = e.target;
+                e.target.style.opacity = '0.5';
+            }
+        });
+        
+        container.addEventListener('dragend', function(e) {
+            if (e.target.classList.contains('list-group-item')) {
+                e.target.style.opacity = '';
+            }
+        });
+        
+        container.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            const afterElement = getDragAfterElement(container, e.clientY);
+            if (afterElement == null) {
+                container.appendChild(draggedItem);
+            } else {
+                container.insertBefore(draggedItem, afterElement);
+            }
+        });
+        
+        container.addEventListener('drop', function(e) {
+            e.preventDefault();
+            // 새로운 순서 읽기
+            engineOrder = [...container.querySelectorAll('.list-group-item')].map(item => item.dataset.engine);
+            updateEngineOrderDisplay();
+        });
+    }
+    
+    function getDragAfterElement(container, y) {
+        const draggableElements = [...container.querySelectorAll('.list-group-item:not(.dragging)')];
+        
+        return draggableElements.reduce((closest, child) => {
+            const box = child.getBoundingClientRect();
+            const offset = y - box.top - box.height / 2;
+            
+            if (offset < 0 && offset > closest.offset) {
+                return { offset: offset, element: child };
+            } else {
+                return closest;
+            }
+        }, { offset: Number.NEGATIVE_INFINITY }).element;
+    }
+    
     async function saveSettings() {
         const form = document.getElementById('settingsForm');
         const formData = new FormData(form);
+        
+        // 엔진 순서 추가
+        formData.append('engine_order', JSON.stringify(engineOrder));
+        
+        // QR 엔진 설정 추가
+        formData.append('qr_engine_order', JSON.stringify(engineOrder));
         
         try {
             const response = await fetch('/settings', {

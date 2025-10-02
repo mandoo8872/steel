@@ -30,12 +30,49 @@ watcher:
   # 파일 크기 확인 횟수
   stability_checks: 3
 
-# QR 인식 설정
+# QR 인식 설정 (다중 엔진 지원)
 qr:
   # QR 정규식 패턴 (기본: 14자리 숫자)
   pattern: "^\\d{14}$"
   # 다중 QR 검출 시 처리: "error" (에러 폴더로 이동) 또는 "manual" (UI에서 선택)
   multiple_qr_action: "manual"
+  
+  # 적응형 DPI 설정
+  adaptive_dpi: true  # true: 자동 DPI 조정, false: 고정 DPI 사용
+  fixed_dpi: 200      # adaptive_dpi가 false일 때 사용할 고정 DPI
+  dpi_candidates: [200, 150, 250, 180, 220, 120, 300]  # 시도할 DPI 목록 (우선순위 순)
+  
+  # 다중 엔진 설정
+  # 엔진 처리 순서: ZBAR (빠름) -> ZXING (기울기/훼손 강함) -> PYZBAR_PREPROC (대비 낮은/번진 QR 보강)
+  engine_order: ["ZBAR", "ZXING", "PYZBAR_PREPROC"]
+  
+  # 실패 이미지 저장 (디버깅용)
+  save_failed_images: true
+  failed_images_path: "data/qr_debug"
+  
+  # ZBar 엔진 설정 (기본 방식, 빠름)
+  zbar:
+    enabled: true
+    timeout: 30
+    options: {}
+  
+  # ZXing 엔진 설정 (구글 기반, 기울기·훼손 QR에 강함)
+  zxing:
+    enabled: true
+    timeout: 60
+    options:
+      try_harder: true
+      formats: ["QR_CODE"]
+  
+  # Pyzbar + OpenCV 전처리 엔진 설정 (대비 낮은/번진 QR에 보강)
+  pyzbar_preproc:
+    enabled: true
+    timeout: 90
+    options:
+      adaptive_threshold: true  # 적응형 임계값 처리
+      deskew: true             # 기울기 보정
+      sharpen: true            # 선명화
+      blur_removal: true       # 블러 제거
 
 # PDF 처리 설정
 pdf:

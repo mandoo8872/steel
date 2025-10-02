@@ -5,7 +5,7 @@ import os
 import yaml
 from pathlib import Path
 from typing import Dict, Any, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from cryptography.fernet import Fernet
 import base64
 from loguru import logger
@@ -53,10 +53,65 @@ class WatcherConfig:
 
 
 @dataclass
+class QREngineConfig:
+    """QR 엔진별 설정"""
+    enabled: bool = True
+    timeout: int = 30  # 초
+    options: dict = None
+    
+    def __post_init__(self):
+        if self.options is None:
+            self.options = {}
+
+
+@dataclass
 class QRConfig:
     """QR 인식 설정"""
     pattern: str = r"^\d{14}$"
     multiple_qr_action: str = "manual"  # error or manual
+    
+    # 적응형 DPI 설정
+    adaptive_dpi: bool = True  # 자동 DPI 조정 활성화
+    fixed_dpi: int = 200  # 고정 DPI 사용 시 값
+    dpi_candidates: list = None  # 시도할 DPI 목록
+    
+    # 다중 엔진 설정
+    engine_order: list = None  # ["ZBAR", "ZXING", "PYZBAR_PREPROC"]
+    save_failed_images: bool = True
+    failed_images_path: str = "data/qr_debug"
+    
+    # 엔진별 상세 설정
+    zbar: QREngineConfig = None
+    zxing: QREngineConfig = None
+    pyzbar_preproc: QREngineConfig = None
+    
+    def __post_init__(self):
+        if self.dpi_candidates is None:
+            self.dpi_candidates = [200, 150, 250, 180, 220, 120, 300]
+        
+        if self.engine_order is None:
+            self.engine_order = ["ZBAR", "ZXING", "PYZBAR_PREPROC"]
+        
+        if self.zbar is None:
+            self.zbar = QREngineConfig()
+        
+        if self.zxing is None:
+            self.zxing = QREngineConfig(
+                options={
+                    "try_harder": True,
+                    "formats": ["QR_CODE"]
+                }
+            )
+        
+        if self.pyzbar_preproc is None:
+            self.pyzbar_preproc = QREngineConfig(
+                options={
+                    "adaptive_threshold": True,
+                    "deskew": True,
+                    "sharpen": True,
+                    "blur_removal": True
+                }
+            )
 
 
 @dataclass
@@ -97,8 +152,8 @@ class HTTPConfig:
 class UploadConfig:
     """업로드 설정"""
     type: str = "nas"  # nas, http, or both
-    nas: NASConfig
-    http: HTTPConfig
+    nas: NASConfig = field(default_factory=NASConfig)
+    http: HTTPConfig = field(default_factory=HTTPConfig)
 
 
 @dataclass
@@ -170,15 +225,22 @@ class ConfigManager:
         if not os.path.exists(self.config_path):
             logger.warning(f"설정 파일을 찾을 수 없습니다: {self.config_path}")
             # 기본 설정 사용
+            self.system = SystemConfig()
             self.paths = PathConfig(
-                scanner_output="/data/scanner_output",
-                data_root="/data/qr_system"
+                scanner_output="data/scanner_output",
+                data_root="data"
             )
+            self.watcher = WatcherConfig()
+            self.qr = QRConfig()
+            self.pdf = PDFConfig()
+            self.batch = BatchConfig()
             self.upload = UploadConfig(
                 type="nas",
                 nas=NASConfig(),
                 http=HTTPConfig()
             )
+            self.retry = RetryConfig()
+            self.retention = RetentionConfig()
             return
         
         with open(self.config_path, 'r', encoding='utf-8') as f:
@@ -195,7 +257,19 @@ class ConfigManager:
             self.watcher = WatcherConfig(**config['watcher'])
         
         if 'qr' in config:
-            self.qr = QRConfig(**config['qr'])
+            qr_cfg = config['qr'].copy()
+            
+            # 엔진 설정을 dataclass로 변환
+            if 'zbar' in qr_cfg and isinstance(qr_cfg['zbar'], dict):
+                qr_cfg['zbar'] = QREngineConfig(**qr_cfg['zbar'])
+            
+            if 'zxing' in qr_cfg and isinstance(qr_cfg['zxing'], dict):
+                qr_cfg['zxing'] = QREngineConfig(**qr_cfg['zxing'])
+            
+            if 'pyzbar_preproc' in qr_cfg and isinstance(qr_cfg['pyzbar_preproc'], dict):
+                qr_cfg['pyzbar_preproc'] = QREngineConfig(**qr_cfg['pyzbar_preproc'])
+            
+            self.qr = QRConfig(**qr_cfg)
         
         if 'pdf' in config:
             self.pdf = PDFConfig(**config['pdf'])

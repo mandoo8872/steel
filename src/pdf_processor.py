@@ -76,16 +76,32 @@ class PDFProcessor:
                         
                         # 중복 검사
                         if remove_duplicates and page_hashes is not None:
-                            # 페이지 내용을 바이트로 추출
-                            page_content = page.extract_text().encode('utf-8')
-                            page_hash = self.calculate_page_hash(page_content)
-                            
-                            if page_hash in page_hashes:
-                                duplicate_count += 1
-                                logger.debug(f"중복 페이지 발견: {pdf_file} - 페이지 {page_num + 1}")
-                                continue
-                            
-                            page_hashes.add(page_hash)
+                            # 페이지 객체 전체를 직렬화하여 해시 계산 (이미지 PDF 포함)
+                            try:
+                                # 페이지의 원본 데이터 스트림을 사용
+                                import io
+                                from PyPDF2 import PdfWriter as TempWriter
+                                
+                                temp_writer = TempWriter()
+                                temp_writer.add_page(page)
+                                
+                                # 메모리에 페이지 작성
+                                temp_buffer = io.BytesIO()
+                                temp_writer.write(temp_buffer)
+                                page_content = temp_buffer.getvalue()
+                                
+                                page_hash = self.calculate_page_hash(page_content)
+                                
+                                if page_hash in page_hashes:
+                                    duplicate_count += 1
+                                    logger.debug(f"중복 페이지 발견: {pdf_file} - 페이지 {page_num + 1}")
+                                    continue
+                                
+                                page_hashes.add(page_hash)
+                            except Exception as e:
+                                # 해시 계산 실패 시 페이지 추가 (안전 모드)
+                                logger.warning(f"페이지 해시 계산 실패: {pdf_file} 페이지 {page_num + 1} - {e}")
+                                pass
                         
                         writer.add_page(page)
                         result['page_count'] += 1

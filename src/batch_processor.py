@@ -74,51 +74,205 @@ class BatchProcessor:
             self._processing = False
     
     async def _process_pending_documents(self):
-        """PENDING 상태 문서 처리"""
-        # pending 폴더의 파일들을 날짜별로 이동
-        pending_files = list(self.config.paths.pending.rglob("*.pdf"))
+        """전체 data 폴더 스캔하여 운송번호별 재병합 처리 (파일 시스템 기반)"""
+        # 모든 관련 폴더에서 PDF 파일 수집
+        all_files = []
+        folders_to_scan = [
+            ('pending', self.config.paths.pending),
+            ('merged', self.config.paths.merged),
+            ('uploaded', self.config.paths.uploaded)
+        ]
         
-        for file_path in pending_files:
+        for folder_name, folder_path in folders_to_scan:
+            if folder_path.exists():
+                pdf_files = list(folder_path.glob("*.pdf"))
+                logger.debug(f"{folder_name} 폴더: {len(pdf_files)}개 파일")
+                all_files.extend([(folder_name, f) for f in pdf_files])
+        
+        if not all_files:
+            logger.debug("처리할 파일이 없습니다.")
+            return
+        
+        logger.info(f"전체 {len(all_files)}개 파일 발견")
+        
+        # 운송번호별로 그룹화
+        transport_groups = defaultdict(lambda: {'pending': [], 'merged': [], 'uploaded': []})
+        
+        for folder_name, file_path in all_files:
             try:
-                # DB에서 문서 정보 조회
-                doc = self.db_session.query(ScanDocument).filter(
-                    ScanDocument.file_path == str(file_path)
-                ).first()
+                # 파일명에서 운송번호 추출
+                filename = file_path.stem
+                # 괄호가 있으면 제거
+                if '(' in filename:
+                    transport_no = filename.split('(')[0]
+                else:
+                    transport_no = filename
                 
-                if not doc or not doc.transport_no:
-                    logger.warning(f"운송번호가 없는 파일: {file_path}")
-                    continue
-                
-                # 날짜 폴더 생성
-                date_folder = doc.transport_no[:8]
-                dest_dir = self.config.paths.pending / date_folder
-                dest_dir.mkdir(parents=True, exist_ok=True)
-                
-                # 파일명 결정 (중복 시 번호 추가)
-                base_name = f"{doc.transport_no}.pdf"
-                dest_path = dest_dir / base_name
-                
-                if dest_path.exists():
-                    # 중복 파일명 처리
-                    counter = 1
-                    while True:
-                        dest_path = dest_dir / f"{doc.transport_no}({counter}).pdf"
-                        if not dest_path.exists():
-                            break
-                        counter += 1
-                
-                # 파일 이동
-                shutil.move(str(file_path), str(dest_path))
-                
-                # DB 업데이트
-                doc.file_path = str(dest_path)
-                doc.status = ProcessStatus.PENDING
-                self.db_session.commit()
-                
-                logger.info(f"파일 이동 완료: {file_path} -> {dest_path}")
-                
+                # 14자리 숫자 검증
+                if len(transport_no) == 14 and transport_no.isdigit():
+                    transport_groups[transport_no][folder_name].append(file_path)
+                    logger.debug(f"파일 그룹화: {file_path.name} -> {transport_no} ({folder_name})")
+                else:
+                    logger.warning(f"유효하지 않은 운송번호 파일: {file_path}")
+                    
             except Exception as e:
-                logger.error(f"파일 이동 오류: {file_path} - {e}")
+                logger.error(f"파일명 파싱 오류: {file_path} - {e}")
+        
+        # 각 운송번호 그룹을 병합 처리
+        for transport_no, file_groups in transport_groups.items():
+            try:
+                # pending 파일이 있거나, 여러 폴더에 분산되어 있으면 재병합
+                pending_files = file_groups['pending']
+                merged_files = file_groups['merged']
+                uploaded_files = file_groups['uploaded']
+                
+                total_files = len(pending_files) + len(merged_files) + len(uploaded_files)
+                
+                if pending_files or total_files > 1:
+                    logger.info(f"운송번호 {transport_no}: pending({len(pending_files)}), merged({len(merged_files)}), uploaded({len(uploaded_files)}) - 재병합 필요")
+                    await self._merge_transport_group_from_all_folders(transport_no, file_groups)
+                else:
+                    logger.debug(f"운송번호 {transport_no}: 재병합 불필요")
+                    
+            except Exception as e:
+                logger.error(f"운송번호 {transport_no} 병합 오류: {e}")
+    
+    async def _merge_transport_group_from_all_folders(self, transport_no: str, file_groups: Dict[str, List[Path]]):
+        """모든 폴더에서 같은 운송번호 파일 수집하여 재병합"""
+        try:
+            # 새 파일이 추가되었는지 확인
+            has_new_files = len(file_groups['pending']) > 0
+            was_uploaded = len(file_groups['uploaded']) > 0
+            
+            # 최종 목적지 결정
+            # uploaded 폴더에 파일이 있었고 새 파일이 추가되면 → merged로 이동 (재업로드 대기)
+            # uploaded 폴더에 파일이 있고 새 파일 없으면 → uploaded 유지
+            # 그 외 → merged
+            if was_uploaded and has_new_files:
+                target_dir = self.config.paths.merged
+                target_folder_name = 'merged'
+                logger.info(f"운송번호 {transport_no}: uploaded에 새 페이지 추가 → merged로 이동하여 재업로드 대기")
+            elif file_groups['uploaded']:
+                target_dir = self.config.paths.uploaded
+                target_folder_name = 'uploaded'
+            else:
+                target_dir = self.config.paths.merged
+                target_folder_name = 'merged'
+            
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target_path = target_dir / f"{transport_no}.pdf"
+            
+            # 모든 파일 수집
+            all_pdf_files = []
+            source_files_to_delete = []  # 병합 후 삭제할 원본 파일들
+            
+            # 모든 폴더에서 파일 수집
+            for folder_name in ['pending', 'merged', 'uploaded']:
+                for file_path in file_groups[folder_name]:
+                    all_pdf_files.append(file_path)
+                    
+                    # uploaded 폴더에서 merged로 이동하는 경우, uploaded 파일도 삭제 대상
+                    if was_uploaded and has_new_files and folder_name == 'uploaded':
+                        source_files_to_delete.append(file_path)
+                        logger.debug(f"재업로드 대상: {file_path} (uploaded → merged 이동)")
+            
+            # 파일 순서: uploaded → merged → pending (오래된 것부터 병합)
+            all_pdf_files.sort(key=lambda f: (
+                0 if 'uploaded' in str(f) else 1 if 'merged' in str(f) else 2,
+                f.stat().st_mtime
+            ))
+            
+            if not all_pdf_files:
+                logger.warning(f"운송번호 {transport_no}: 병합할 파일 없음")
+                return
+            
+            logger.info(f"운송번호 {transport_no}: {len(all_pdf_files)}개 파일 -> {target_folder_name} 폴더로 병합")
+            
+            # 병합 수행 (항상 병합, 단일 파일도 복사하여 중복 확인)
+            pdf_processor = PDFProcessor(self.config)
+            
+            # 임시 파일로 병합
+            temp_path = target_path.with_suffix('.tmp.pdf')
+            result = pdf_processor.merge_pdfs(all_pdf_files, temp_path, remove_duplicates=True)
+            
+            if result['success']:
+                # 임시 파일을 최종 파일로 이동 (덮어쓰기)
+                shutil.move(str(temp_path), str(target_path))
+                logger.debug(f"병합 파일 생성: {target_path}")
+                
+                # 원본 파일들 삭제 (최종 target_path는 제외!)
+                for file_path in all_pdf_files:
+                    # 최종 목적지 파일과 다른 경로의 파일만 삭제
+                    if file_path.exists() and file_path.resolve() != target_path.resolve():
+                        try:
+                            file_path.unlink()
+                            logger.debug(f"원본 파일 삭제: {file_path}")
+                        except Exception as e:
+                            logger.error(f"원본 삭제 실패: {file_path} - {e}")
+                
+                logger.info(f"병합 완료: {transport_no} -> {target_folder_name} ({result['page_count']}페이지, 중복제거: {result['duplicate_count']})")
+            else:
+                # 병합 실패 시 임시 파일 정리
+                if temp_path.exists():
+                    temp_path.unlink()
+                raise Exception(f"PDF 병합 실패: {result['error']}")
+                    
+        except Exception as e:
+            logger.error(f"운송번호 {transport_no} 재병합 오류: {e}")
+            raise
+    
+    async def _merge_transport_group(self, transport_no: str, files: List[Path]):
+        """운송번호별 파일 그룹 병합 (하위 호환성용)"""
+        try:
+            # merged 폴더에 직접 저장 (날짜 폴더 제거)
+            merged_dir = self.config.paths.merged
+            merged_dir.mkdir(parents=True, exist_ok=True)
+            merged_path = merged_dir / f"{transport_no}.pdf"
+            
+            # 기존 병합 파일이 있으면 포함
+            pdf_files = []
+            if merged_path.exists():
+                pdf_files.append(merged_path)
+                logger.info(f"기존 병합 파일 발견: {merged_path}")
+            
+            # 새 파일들 추가
+            pdf_files.extend(files)
+            
+            if len(pdf_files) == 1 and not merged_path.exists():
+                # 단일 파일인 경우 그대로 이동
+                shutil.move(str(pdf_files[0]), str(merged_path))
+                logger.info(f"단일 파일 이동: {pdf_files[0]} -> {merged_path}")
+            else:
+                # 병합 수행
+                from .pdf_processor import PDFProcessor
+                pdf_processor = PDFProcessor(self.config)
+                
+                # 임시 파일로 병합
+                temp_path = merged_path.with_suffix('.tmp.pdf')
+                result = pdf_processor.merge_pdfs(pdf_files, temp_path, remove_duplicates=True)
+                
+                if result['success']:
+                    # 기존 파일 삭제 후 임시 파일을 최종 파일로 이동
+                    if merged_path.exists():
+                        merged_path.unlink()
+                    shutil.move(str(temp_path), str(merged_path))
+                    
+                    # 원본 파일들 삭제
+                    for file_path in files:
+                        if file_path.exists():
+                            file_path.unlink()
+                            logger.info(f"원본 파일 삭제: {file_path}")
+                    
+                    logger.info(f"병합 완료: {transport_no} ({result['page_count']}페이지, 중복제거: {result['duplicate_count']})")
+                else:
+                    # 병합 실패 시 임시 파일 정리
+                    if temp_path.exists():
+                        temp_path.unlink()
+                    raise Exception(f"PDF 병합 실패: {result['error']}")
+                    
+        except Exception as e:
+            logger.error(f"운송번호 {transport_no} 병합 처리 오류: {e}")
+            raise
     
     async def _process_merges(self):
         """병합 처리"""
@@ -144,8 +298,7 @@ class BatchProcessor:
     async def _merge_group(self, transport_no: str, docs: List[ScanDocument]):
         """운송번호 그룹 병합"""
         # 기존 병합 파일 확인
-        date_folder = transport_no[:8]
-        merged_dir = self.config.paths.merged / date_folder
+        merged_dir = self.config.paths.merged
         merged_dir.mkdir(parents=True, exist_ok=True)
         merged_path = merged_dir / f"{transport_no}.pdf"
         
@@ -163,11 +316,13 @@ class BatchProcessor:
             if file_path.exists():
                 pdf_files.append(file_path)
         
+        result = None
         if len(pdf_files) <= 1 and not merged_path.exists():
             # 단일 파일인 경우 그대로 이동
             if pdf_files:
                 shutil.move(str(pdf_files[0]), str(merged_path))
                 logger.info(f"단일 파일 이동: {pdf_files[0]} -> {merged_path}")
+                result = {'success': True, 'page_count': 1, 'duplicate_count': 0}
         else:
             # 병합 수행
             result = self.pdf_processor.merge_pdfs(
@@ -207,8 +362,8 @@ class BatchProcessor:
             message=f"병합 완료: {transport_no}",
             details=json.dumps({
                 'file_count': len(pdf_files),
-                'page_count': result.get('page_count', 0),
-                'duplicate_count': result.get('duplicate_count', 0)
+                'page_count': result.get('page_count', 0) if result else 0,
+                'duplicate_count': result.get('duplicate_count', 0) if result else 0
             })
         )
         self.db_session.add(log)
@@ -226,6 +381,11 @@ class BatchProcessor:
     
     async def _process_uploads(self):
         """업로드 처리"""
+        # 업로드가 비활성화된 경우 스킵
+        if self.config.upload.type == 'none':
+            logger.debug("업로드 비활성화됨 - 업로드 처리 스킵")
+            return
+        
         # 업로드 대기 중인 항목 조회
         queue_items = self.db_session.query(UploadQueue).filter(
             UploadQueue.retry_count < self.config.retry.max_attempts
@@ -244,8 +404,7 @@ class BatchProcessor:
                 
                 if result['success']:
                     # 성공 시 uploaded 폴더로 이동
-                    date_folder = item.transport_no[:8]
-                    uploaded_dir = self.config.paths.uploaded / date_folder
+                    uploaded_dir = self.config.paths.uploaded
                     uploaded_dir.mkdir(parents=True, exist_ok=True)
                     uploaded_path = uploaded_dir / f"{item.transport_no}.pdf"
                     
@@ -300,16 +459,29 @@ class BatchProcessor:
             # 업로드 큐 처리로 위임
     
     async def _move_to_error(self, file_path: Path, error_message: str):
-        """파일을 에러 폴더로 이동"""
+        """파일을 에러 폴더로 이동 (날짜 폴더 없이)"""
         try:
-            # 날짜 폴더 생성
-            date_str = datetime.now().strftime("%Y%m%d")
-            error_dir = self.config.paths.error / date_str
+            # 에러 폴더 생성
+            error_dir = self.config.paths.error
             error_dir.mkdir(parents=True, exist_ok=True)
             
             # 파일 이동
             error_path = error_dir / file_path.name
             shutil.move(str(file_path), str(error_path))
+            
+            # 데이터베이스 파일 경로 업데이트
+            from .models import ScanDocument, ProcessStatus
+            doc = self.db_session.query(ScanDocument).filter(
+                ScanDocument.file_path == str(file_path)
+            ).first()
+            
+            if doc:
+                doc.file_path = str(error_path)
+                doc.status = ProcessStatus.ERROR
+                doc.error_message = error_message
+                doc.processed_at = datetime.now()
+                self.db_session.commit()
+                logger.info(f"DB 경로 업데이트: {file_path} -> {error_path}")
             
             # 에러 정보 저장
             error_info = {
@@ -323,6 +495,7 @@ class BatchProcessor:
                 json.dump(error_info, f, ensure_ascii=False, indent=2)
             
             logger.info(f"에러 폴더로 이동: {file_path} -> {error_path}")
+            return error_path
             
         except Exception as e:
             logger.error(f"에러 폴더 이동 실패: {file_path} - {e}")

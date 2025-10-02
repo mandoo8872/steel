@@ -55,9 +55,8 @@ class NASUploader(BaseUploader):
         }
         
         try:
-            # 대상 경로 생성
-            date_folder = transport_no[:8]  # YYYYMMDD
-            dest_dir = self.nas_path / date_folder
+            # 대상 경로 생성 (날짜 폴더 없이 바로 저장)
+            dest_dir = self.nas_path
             dest_file = dest_dir / f"{transport_no}.pdf"
             
             # Windows 네트워크 드라이브 연결 (필요한 경우)
@@ -240,6 +239,21 @@ class CombinedUploader(BaseUploader):
         return result
 
 
+class DummyUploader:
+    """업로드 비활성화 시 사용하는 더미 업로더"""
+    
+    def __init__(self, config):
+        self.config = config
+    
+    async def upload(self, file_path: Path, transport_no: str) -> Dict:
+        """업로드 스킵 (즉시 성공 반환)"""
+        return {
+            'success': True,
+            'message': '업로드 비활성화됨 (테스트 모드)',
+            'destination': None
+        }
+
+
 class UploadManager:
     """업로드 관리자"""
     
@@ -247,22 +261,25 @@ class UploadManager:
         self.config = config
         
         # 업로더 선택
-        if config.upload.type == 'nas':
+        if config.upload.type == 'none':
+            self.uploader = DummyUploader(config)
+            logger.info("업로드 관리자 초기화 - 타입: none (업로드 비활성화)")
+        elif config.upload.type == 'nas':
             self.uploader = NASUploader(config)
+            logger.info(f"업로드 관리자 초기화 - 타입: {config.upload.type}")
         elif config.upload.type == 'http':
             self.uploader = HTTPUploader(config)
+            logger.info(f"업로드 관리자 초기화 - 타입: {config.upload.type}")
         elif config.upload.type == 'both':
             self.uploader = CombinedUploader(config)
+            logger.info(f"업로드 관리자 초기화 - 타입: {config.upload.type}")
         else:
             raise ValueError(f"지원하지 않는 업로드 타입: {config.upload.type}")
-        
-        logger.info(f"업로드 관리자 초기화 - 타입: {config.upload.type}")
     
     async def upload_file(self, file_path: Path, transport_no: str) -> Dict:
         """파일 업로드"""
         return await self.uploader.upload(file_path, transport_no)
     
     def get_upload_path(self, transport_no: str) -> Path:
-        """업로드 경로 생성"""
-        date_folder = transport_no[:8]  # YYYYMMDD
-        return self.config.paths.uploaded / date_folder / f"{transport_no}.pdf"
+        """업로드 경로 생성 (날짜 폴더 없이)"""
+        return self.config.paths.uploaded / f"{transport_no}.pdf"

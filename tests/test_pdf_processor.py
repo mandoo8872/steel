@@ -20,6 +20,7 @@ class TestPDFProcessor:
     def pdf_processor(self):
         """PDF 프로세서 픽스처"""
         config = ConfigManager()
+        config.pdf.remove_duplicates = False
         return PDFProcessor(config)
     
     @pytest.fixture
@@ -55,8 +56,11 @@ class TestPDFProcessor:
         # 정리
         sample_pdf.unlink()
     
-    def test_merge_pdfs(self, pdf_processor):
+    def test_merge_pdfs(self):
         """PDF 병합 테스트"""
+        config = ConfigManager()
+        config.pdf.remove_duplicates = False
+        pdf_processor = PDFProcessor(config)
         # 여러 개의 샘플 PDF 생성
         pdf_files = []
         for i in range(3):
@@ -70,7 +74,7 @@ class TestPDFProcessor:
         with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as output:
             output_path = Path(output.name)
         
-        result = pdf_processor.merge_pdfs(pdf_files, output_path)
+        result = pdf_processor.merge_pdfs(pdf_files, output_path, remove_duplicates=False)
         
         assert result['success'] == True
         assert result['page_count'] == 3

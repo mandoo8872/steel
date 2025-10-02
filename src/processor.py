@@ -13,7 +13,7 @@ from loguru import logger
 from .config import ConfigManager
 from .models import init_database, get_session, ScanDocument, ProcessStatus, ProcessLog
 from .file_watcher import FileWatcher
-from .qr_reader import QRReader, QRProcessor
+from .qr_reader import QRReader
 from .batch_processor import BatchProcessor
 
 
@@ -29,9 +29,8 @@ class QRScanProcessor:
         self.engine = init_database(db_path)
         self.db_session = get_session(self.engine)
         
-        # 컴포넌트 초기화
-        self.qr_reader = QRReader(self.config.qr.pattern)
-        self.qr_processor = QRProcessor(self.qr_reader)
+        # 컴포넌트 초기화 (다중 엔진 QR 리더)
+        self.qr_reader = QRReader(config=self.config.qr)
         self.batch_processor = BatchProcessor(self.config, self.db_session)
         self.file_watcher = FileWatcher(self.config, self._process_new_file)
         
@@ -41,6 +40,7 @@ class QRScanProcessor:
         # 실행 상태
         self._running = False
         self._batch_task = None
+        self._main_loop = None
         
         logger.info("QR 스캔 프로세서 초기화 완료")
     
@@ -51,6 +51,7 @@ class QRScanProcessor:
             return
         
         self._running = True
+        self._main_loop = asyncio.get_running_loop()
         logger.info("QR 스캔 프로세서 시작")
         
         try:
@@ -102,7 +103,15 @@ class QRScanProcessor:
     def _process_new_file(self, file_path: Path):
         """새 파일 처리 (동기)"""
         # 비동기 태스크로 위임
-        asyncio.create_task(self._process_new_file_async(file_path))
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._process_new_file_async(file_path))
+        except RuntimeError:
+            # 이벤트 루프가 없는 경우 새로운 태스크로 실행
+            asyncio.run_coroutine_threadsafe(
+                self._process_new_file_async(file_path),
+                self._main_loop
+            )
     
     async def _process_new_file_async(self, file_path: Path):
         """새 파일 처리 (비동기)"""
@@ -122,7 +131,7 @@ class QRScanProcessor:
             # 2. QR 코드 처리
             result = await asyncio.get_event_loop().run_in_executor(
                 self.executor,
-                self.qr_processor.process_document,
+                self._process_qr_document,
                 file_path
             )
             
@@ -193,11 +202,10 @@ class QRScanProcessor:
             await self._move_to_error(file_path, str(e))
     
     async def _move_to_pending(self, file_path: Path, transport_no: str):
-        """pending 폴더로 이동"""
+        """pending 폴더로 이동 (날짜 폴더 없이 직접)"""
         try:
-            # 날짜 폴더 생성
-            date_folder = transport_no[:8]
-            dest_dir = self.config.paths.pending / date_folder
+            # pending 폴더에 직접 저장 (날짜 폴더 제거)
+            dest_dir = self.config.paths.pending
             dest_dir.mkdir(parents=True, exist_ok=True)
             
             # 대상 경로
@@ -221,11 +229,10 @@ class QRScanProcessor:
             raise
     
     async def _move_to_error(self, file_path: Path, error_message: str):
-        """error 폴더로 이동"""
+        """error 폴더로 이동 (날짜 폴더 없이 직접)"""
         try:
-            # 날짜 폴더 생성
-            date_str = datetime.now().strftime("%Y%m%d")
-            error_dir = self.config.paths.error / date_str
+            # error 폴더에 직접 저장 (날짜 폴더 제거)
+            error_dir = self.config.paths.error
             error_dir.mkdir(parents=True, exist_ok=True)
             
             # 파일 이동
@@ -243,6 +250,19 @@ class QRScanProcessor:
             
             shutil.move(str(file_path), str(error_path))
             
+            # 데이터베이스 파일 경로 업데이트
+            doc = self.db_session.query(ScanDocument).filter(
+                ScanDocument.file_path == str(file_path)
+            ).first()
+            
+            if doc:
+                doc.file_path = str(error_path)
+                doc.status = ProcessStatus.ERROR
+                doc.error_message = error_message
+                doc.processed_at = datetime.now()
+                self.db_session.commit()
+                logger.info(f"DB 경로 업데이트: {file_path} -> {error_path}")
+            
             # 에러 정보 저장
             error_info = {
                 'original_path': str(file_path),
@@ -255,6 +275,7 @@ class QRScanProcessor:
                 json.dump(error_info, f, ensure_ascii=False, indent=2)
             
             logger.debug(f"error로 이동: {file_path} -> {error_path}")
+            return error_path
             
         except Exception as e:
             logger.error(f"error 이동 실패: {file_path} - {e}")
@@ -303,6 +324,32 @@ class QRScanProcessor:
         logger.info("강제 배치 처리 요청")
         await self.batch_processor.process_batch()
     
+    async def rescan_scanner_output(self):
+        """scanner_output 폴더 재스캔 (완전 파일 기반)"""
+        logger.info("scanner_output 폴더 재스캔 시작")
+        
+        # scanner_output 폴더의 모든 PDF 파일 직접 처리
+        scanner_files = list(self.config.paths.scanner_output.glob("*.pdf"))
+        
+        if not scanner_files:
+            logger.info("scanner_output 폴더에 처리할 파일이 없습니다.")
+            return 0
+        
+        logger.info(f"scanner_output 폴더에서 {len(scanner_files)}개 파일 발견")
+        
+        # 모든 파일을 새로운 파일로 처리 (DB 상태 무시)
+        processed_count = 0
+        for file_path in scanner_files:
+            try:
+                logger.info(f"파일 처리 시작: {file_path}")
+                await self._process_new_file_async(file_path)
+                processed_count += 1
+            except Exception as e:
+                logger.error(f"파일 처리 오류: {file_path} - {e}")
+        
+        logger.info(f"재스캔 완료: {processed_count}개 파일 처리")
+        return processed_count
+    
     async def reprocess_error_file(self, error_file_path: Path, transport_no: str):
         """에러 파일 재처리"""
         logger.info(f"에러 파일 재처리: {error_file_path} -> {transport_no}")
@@ -342,3 +389,63 @@ class QRScanProcessor:
         except Exception as e:
             logger.error(f"재처리 실패: {error_file_path} - {e}")
             raise
+    
+    def _process_qr_document(self, file_path: Path) -> dict:
+        """
+        QR 문서 처리 (다중 엔진)
+        
+        Returns:
+            dict: {
+                'status': str,  # 'success', 'multiple', 'failed'
+                'valid_qr_codes': List[str],
+                'all_qr_codes': List[str],
+                'transport_no': Optional[str],
+                'error_message': Optional[str],
+                'processing_info': dict
+            }
+        """
+        try:
+            # 다중 엔진 QR 리더는 2개의 값만 반환
+            valid_codes, all_codes = self.qr_reader.read_from_pdf(file_path)
+            
+            if not valid_codes:
+                # QR 인식 실패
+                return {
+                    'status': 'failed',
+                    'valid_qr_codes': [],
+                    'all_qr_codes': all_codes,
+                    'transport_no': None,
+                    'error_message': 'QR 코드를 찾을 수 없습니다.',
+                    'processing_info': {}
+                }
+            elif len(valid_codes) == 1:
+                # 단일 QR 성공
+                return {
+                    'status': 'success',
+                    'valid_qr_codes': valid_codes,
+                    'all_qr_codes': all_codes,
+                    'transport_no': valid_codes[0],
+                    'error_message': None,
+                    'processing_info': {}
+                }
+            else:
+                # 다중 QR 검출
+                return {
+                    'status': 'multiple',
+                    'valid_qr_codes': valid_codes,
+                    'all_qr_codes': all_codes,
+                    'transport_no': None,
+                    'error_message': f'다중 QR 코드 검출: {len(valid_codes)}개',
+                    'processing_info': {}
+                }
+            
+        except Exception as e:
+            logger.error(f"QR 문서 처리 오류: {file_path} - {e}")
+            return {
+                'status': 'failed',
+                'valid_qr_codes': [],
+                'all_qr_codes': [],
+                'transport_no': None,
+                'error_message': str(e),
+                'processing_info': {'error': str(e)}
+            }

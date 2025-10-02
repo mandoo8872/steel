@@ -24,6 +24,7 @@
             </tr>
         </thead>
         <tbody>
+            <!-- 데이터베이스 로그 -->
             {% for log in logs %}
             <tr>
                 <td><small>{{ log.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</small></td>
@@ -47,13 +48,44 @@
                 </td>
             </tr>
             {% endfor %}
+            
+            <!-- 파일 로그 -->
+            {% for file_log in file_logs %}
+            <tr class="table-light">
+                <td><small>{{ file_log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</small></td>
+                <td><span class="badge bg-secondary">{{ file_log.level }}</span></td>
+                <td>
+                    {% if file_log.level == 'INFO' %}
+                        <span class="text-info"><i class="bi bi-info-circle"></i></span>
+                    {% elif file_log.level == 'ERROR' %}
+                        <span class="text-danger"><i class="bi bi-x-circle"></i></span>
+                    {% elif file_log.level == 'WARNING' %}
+                        <span class="text-warning"><i class="bi bi-exclamation-triangle"></i></span>
+                    {% else %}
+                        <span class="text-secondary"><i class="bi bi-circle"></i></span>
+                    {% endif %}
+                </td>
+                <td><small>{{ file_log.message }}</small></td>
+                <td>
+                    <small class="text-muted">
+                        <i class="bi bi-file-text"></i> {{ file_log.filename }}
+                    </small>
+                </td>
+            </tr>
+            {% endfor %}
         </tbody>
     </table>
 </div>
 
-{% if not logs %}
+{% if not logs and not file_logs %}
 <div class="alert alert-info text-center">
     처리 로그가 없습니다.
+</div>
+{% elif total_logs %}
+<div class="alert alert-success text-center">
+    총 {{ total_logs }}개의 로그를 표시하고 있습니다.
+    {% if logs %}(DB: {{ logs|length }}개){% endif %}
+    {% if file_logs %}(파일: {{ file_logs|length }}개){% endif %}
 </div>
 {% endif %}
 

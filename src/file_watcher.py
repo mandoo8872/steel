@@ -5,7 +5,7 @@ import os
 import time
 import asyncio
 from pathlib import Path
-from typing import Set, Optional, Callable, Dict
+from typing import Set, Optional, Callable, Dict, List
 from datetime import datetime, timedelta
 import shutil
 from watchdog.observers import Observer
@@ -217,7 +217,8 @@ class FileWatcher:
         
         try:
             for pdf_file in Path(self.watch_path).rglob("*.pdf"):
-                if self.stability_checker.is_file_stable(pdf_file):
+                # 기존 파일들은 안정성 검사 생략 (이미 완성된 파일로 간주)
+                if pdf_file.exists() and pdf_file.stat().st_size > 0:
                     existing_files.append(pdf_file)
                     logger.info(f"기존 PDF 발견: {pdf_file}")
         

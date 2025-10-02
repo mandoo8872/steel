@@ -11,7 +11,7 @@ Pillow==10.1.0
 
 # QR 코드 인식
 pyzbar==0.1.9
-opencv-python==4.8.1.78
+opencv-python==4.7.0.72
 
 # 파일 감시
 watchdog==3.0.0
