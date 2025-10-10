@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>인스턴스 관리 - Steel QR</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .instance-table {
+            background: white;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .instance-table th {
+            font-weight: bold;
+            font-size: 13px;
+            background: #f8f9fa;
+            border-bottom: 2px solid #dee2e6;
+        }
+        
+        .instance-table td {
+            vertical-align: middle;
+        }
+        
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 6px;
+        }
+        
+        .status-indicator.online {
+            background: #28a745;
+        }
+        
+        .status-indicator.offline {
+            background: #dc3545;
+        }
+        
+        .role-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+        }
+        
+        .role-badge.kiosk {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+        
+        .role-badge.admin {
+            background: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <!-- 인스턴스 선택 바 -->
+    {% set is_admin_mode = true %}
+    <script>
+        const adminPassword = '{{ config.system.admin_password if config else "1212" }}';
+    </script>
+    {% include 'common/instance_selector.html' %}
+    
+    <div class="container-fluid mt-4">
+        <div class="row mb-4">
+            <div class="col-md-8">
+                <h4>인스턴스 관리</h4>
+                <p class="text-muted">등록된 모든 인스턴스를 관리합니다</p>
+            </div>
+            <div class="col-md-4 text-end">
+                <a href="/registry" class="btn btn-primary">레지스트리 편집</a>
+                <button class="btn btn-secondary" onclick="refreshInstances()">새로고침</button>
+            </div>
+        </div>
+        
+        <div class="row">
+            <div class="col-12">
+                <div class="instance-table">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th width="50">상태</th>
+                                <th>라벨</th>
+                                <th>ID</th>
+                                <th>주소</th>
+                                <th>역할</th>
+                                <th>큐</th>
+                                <th>오류</th>
+                                <th>업타임</th>
+                                <th width="200">작업</th>
+                            </tr>
+                        </thead>
+                        <tbody id="instancesTableBody">
+                            <tr>
+                                <td colspan="9" class="text-center py-5">
+                                    <div class="spinner-border text-primary" role="status">
+                                        <span class="visually-hidden">로딩 중...</span>
+                                    </div>
+                                    <p class="mt-2 text-muted">인스턴스 목록을 불러오는 중...</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // 페이지 로드 시 초기화
+        document.addEventListener('DOMContentLoaded', function() {
+            refreshInstances();
+            
+            // 10초마다 자동 갱신
+            setInterval(refreshInstances, 10000);
+        });
+        
+        // 인스턴스 목록 새로고침
+        async function refreshInstances() {
+            try {
+                const response = await fetch('/api/admin/instances/health', {
+                    headers: {
+                        'Authorization': 'Basic ' + btoa('admin:' + adminPassword)
+                    }
+                });
+                
+                if (response.ok) {
+                    const instances = await response.json();
+                    renderInstancesTable(instances);
+                } else {
+                    showError('인스턴스 목록을 불러올 수 없습니다');
+                }
+            } catch (error) {
+                console.error('인스턴스 로딩 오류:', error);
+                showError('네트워크 오류가 발생했습니다');
+            }
+        }
+        
+        // 테이블 렌더링
+        function renderInstancesTable(instances) {
+            const tbody = document.getElementById('instancesTableBody');
+            
+            if (instances.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="9" class="text-center py-4">
+                            등록된 인스턴스가 없습니다. 
+                            <a href="/registry">레지스트리 편집</a>에서 인스턴스를 추가하세요.
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            tbody.innerHTML = instances.map(inst => createInstanceRow(inst)).join('');
+        }
+        
+        // 테이블 행 생성
+        function createInstanceRow(inst) {
+            const isOnline = inst.online;
+            const status = inst.status || {};
+            const queue = status.queue || {};
+            const uptime = status.uptimeSec || 0;
+            const hours = Math.floor(uptime / 3600);
+            const minutes = Math.floor((uptime % 3600) / 60);
+            
+            return `
+                <tr>
+                    <td class="text-center">
+                        <span class="status-indicator ${isOnline ? 'online' : 'offline'}" 
+                              title="${isOnline ? '온라인' : '오프라인'}"></span>
+                    </td>
+                    <td><strong>${inst.label || '-'}</strong></td>
+                    <td><code>${inst.instance_id}</code></td>
+                    <td><small>${inst.baseUrl || '-'}</small></td>
+                    <td><span class="role-badge ${inst.role}">${inst.role}</span></td>
+                    <td>${isOnline ? (queue.total || 0) : '-'}</td>
+                    <td class="${queue.error > 0 ? 'text-danger fw-bold' : ''}">${isOnline ? (queue.error || 0) : '-'}</td>
+                    <td>${isOnline ? `${hours}h ${minutes}m` : '-'}</td>
+                    <td>
+                        ${isOnline ? `
+                            <button class="btn btn-sm btn-outline-primary" onclick="sendCommand('${inst.instance_id}', 'RUN_BATCH')">
+                                배치
+                            </button>
+                            <button class="btn btn-sm btn-outline-info" onclick="viewDetail('${inst.instance_id}')">
+                                상세
+                            </button>
+                        ` : `
+                            <span class="text-muted small">오프라인</span>
+                        `}
+                    </td>
+                </tr>
+            `;
+        }
+        
+        // 상세 보기 (모달)
+        async function viewDetail(instanceId) {
+            try {
+                console.log('인스턴스 상세 조회:', instanceId);
+                
+                const response = await fetch(`/api/admin/instances/${instanceId}/status`, {
+                    headers: {
+                        'Authorization': 'Basic ' + btoa('admin:' + adminPassword)
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
+                const data = await response.json();
+                console.log('인스턴스 상세:', data);
+                
+                // 모달로 상세 정보 표시
+                showDetailModal(instanceId, data);
+                
+            } catch (error) {
+                console.error('상세 조회 오류:', error);
+                alert(`상세 정보를 가져올 수 없습니다: ${error.message}`);
+            }
+        }
+        
+        // 상세 정보 모달 표시
+        function showDetailModal(instanceId, data) {
+            const inst = data.instance || {};
+            const status = data.status || {};
+            const queue = status.queue || {};
+            
+            const modalHtml = `
+                <div class="modal fade" id="detailModal" tabindex="-1">
+                    <div class="modal-dialog modal-lg">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title">인스턴스 상세: ${inst.label || instanceId}</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <h6>기본 정보</h6>
+                                <table class="table table-sm">
+                                    <tr><th>ID</th><td>${inst.id || instanceId}</td></tr>
+                                    <tr><th>Label</th><td>${inst.label || '-'}</td></tr>
+                                    <tr><th>Base URL</th><td>${inst.baseUrl || '-'}</td></tr>
+                                    <tr><th>Role</th><td><span class="badge bg-${inst.role === 'kiosk' ? 'primary' : 'info'}">${inst.role || '-'}</span></td></tr>
+                                </table>
+                                
+                                <h6 class="mt-3">시스템 상태</h6>
+                                <table class="table table-sm">
+                                    <tr><th>Version</th><td>${status.version || '-'}</td></tr>
+                                    <tr><th>Uptime</th><td>${status.uptimeSec ? Math.floor(status.uptimeSec / 60) + '분' : '-'}</td></tr>
+                                    <tr><th>Disk Free</th><td>${status.diskFreeMB ? (status.diskFreeMB / 1024).toFixed(1) + ' GB' : '-'}</td></tr>
+                                    <tr><th>Last Batch</th><td>${status.lastBatchAt || '-'}</td></tr>
+                                </table>
+                                
+                                <h6 class="mt-3">큐 상태</h6>
+                                <table class="table table-sm">
+                                    <tr><th>신규 문서</th><td>${queue.new || 0}개</td></tr>
+                                    <tr><th>병합 대기</th><td>${queue.pendingMerge || 0}개</td></tr>
+                                    <tr><th>업로드 대기</th><td>${queue.pendingUpload || 0}개</td></tr>
+                                    <tr><th>업로드 완료</th><td>${queue.uploaded || 0}개</td></tr>
+                                    <tr><th>오류</th><td><span class="text-danger">${queue.error || 0}개</span></td></tr>
+                                    <tr><th>전체</th><td><strong>${queue.total || 0}개</strong></td></tr>
+                                </table>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // 기존 모달 제거
+            const oldModal = document.getElementById('detailModal');
+            if (oldModal) {
+                oldModal.remove();
+            }
+            
+            // 새 모달 추가 및 표시
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            const modalElement = document.getElementById('detailModal');
+            const modal = new bootstrap.Modal(modalElement);
+            
+            // 접근성 경고 해결: 모달이 표시될 때 aria-hidden 제거
+            modalElement.addEventListener('shown.bs.modal', function () {
+                this.removeAttribute('aria-hidden');
+            });
+            
+            // 모달이 닫힐 때 정리
+            modalElement.addEventListener('hidden.bs.modal', function () {
+                this.remove();
+            });
+            
+            modal.show();
+        }
+        
+        // 원격 명령 전송
+        async function sendCommand(instanceId, commandType) {
+            if (!confirm(`'${commandType}' 명령을 전송하시겠습니까?`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/admin/instances/${instanceId}/command`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Basic ' + btoa('admin:' + adminPassword)
+                    },
+                    body: JSON.stringify({
+                        command_type: commandType,
+                        payload: {}
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert('명령이 전송되었습니다');
+                    refreshInstances();
+                } else {
+                    alert('명령 전송 실패: ' + (result.message || '알 수 없는 오류'));
+                }
+            } catch (error) {
+                console.error('명령 전송 오류:', error);
+                alert('명령 전송 중 오류가 발생했습니다');
+            }
+        }
+        
+        // 에러 표시
+        function showError(message) {
+            const tbody = document.getElementById('instancesTableBody');
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="9" class="text-center py-4">
+                        <div class="alert alert-danger mb-0">${message}</div>
+                    </td>
+                </tr>
+            `;
+        }
+    </script>
+</body>
+</html>
+

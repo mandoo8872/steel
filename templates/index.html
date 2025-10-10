@@ -328,21 +328,45 @@
     
     // 폴더별 네비게이션 함수
     function navigateToFolder(folderType) {
+        // 해당 폴더의 문서 개수 확인
+        let count = 0;
+        switch(folderType) {
+            case 'scanner':
+                count = parseInt(document.getElementById('scanner-count').textContent);
+                break;
+            case 'pending':
+                count = parseInt(document.getElementById('pending-count').textContent);
+                break;
+            case 'merged':
+                count = parseInt(document.getElementById('merged-count').textContent);
+                break;
+            case 'uploaded':
+                count = parseInt(document.getElementById('uploaded-count').textContent);
+                break;
+            case 'error':
+                count = parseInt(document.getElementById('error-count').textContent);
+                break;
+        }
+        
+        // 개수가 0이면 해당 폴더로 이동하지 않음
+        if (count === 0 && folderType !== 'all') {
+            return;
+        }
+        
         let url = '/documents';
         
         switch(folderType) {
             case 'scanner':
-                // 신규 문서는 별도 페이지가 없으므로 전체 문서로
-                url = '/documents';
+                url = '/documents?folder=scanner';
                 break;
             case 'pending':
-                url = '/documents?status=PENDING';
+                url = '/documents?folder=pending';
                 break;
             case 'merged':
-                url = '/documents?status=MERGED';
+                url = '/documents?folder=merged';
                 break;
             case 'uploaded':
-                url = '/documents?status=UPLOADED';
+                url = '/documents?folder=uploaded';
                 break;
             case 'error':
                 url = '/errors';

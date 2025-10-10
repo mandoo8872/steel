@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "instances": [
+    {
+      "id": "local",
+      "label": "손동익의 헬스클럽",
+      "baseUrl": "http://localhost:8000",
+      "role": "kiosk",
+      "auth": {
+        "type": "basic",
+        "username": "admin",
+        "password": "1212",
+        "token": "",
+        "refresh_token": "",
+        "cert_path": "",
+        "key_path": "",
+        "sso_provider": "",
+        "redirect_url": "",
+        "metadata": {}
+      }
+    }
+  ]
+}

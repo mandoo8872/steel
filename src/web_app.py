@@ -24,6 +24,14 @@ security = HTTPBasic()
 # 전역 프로세서 인스턴스
 processor: Optional[QRScanProcessor] = None
 
+
+def init_processor(proc: QRScanProcessor):
+    """프로세서 초기화 (모드별 호출)"""
+    global processor
+    processor = proc
+    logger.info("프로세서 전역 설정 완료")
+
+
 # 템플릿 설정
 templates_dir = Path(__file__).parent.parent / "templates"
 templates_dir.mkdir(exist_ok=True)
@@ -57,6 +65,75 @@ async def shutdown_event():
     if processor:
         await processor.stop()
     logger.info("웹 애플리케이션 종료")
+
+
+@app.get("/logout", response_class=HTMLResponse)
+async def logout(request: Request):
+    """로그아웃 - 자바스크립트로 인증 초기화"""
+    html_content = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>로그아웃 중...</title>
+        <style>
+            body {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+                margin: 0;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                background: #f5f5f5;
+            }
+            .logout-box {
+                text-align: center;
+                padding: 40px;
+                background: white;
+                border-radius: 8px;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            }
+            .spinner {
+                border: 3px solid #f3f3f3;
+                border-top: 3px solid #3498db;
+                border-radius: 50%;
+                width: 40px;
+                height: 40px;
+                animation: spin 1s linear infinite;
+                margin: 0 auto 20px;
+            }
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="logout-box">
+            <div class="spinner"></div>
+            <h3>로그아웃 중...</h3>
+            <p>잠시만 기다려주세요</p>
+        </div>
+        <script>
+            // 잘못된 인증 정보로 요청하여 브라우저의 인증 캐시 초기화
+            setTimeout(function() {
+                fetch('/', {
+                    headers: {
+                        'Authorization': 'Basic ' + btoa('logout:logout')
+                    }
+                }).then(function() {
+                    // 로그인 페이지로 리다이렉트
+                    window.location.href = '/';
+                }).catch(function() {
+                    // 실패해도 로그인 페이지로
+                    window.location.href = '/';
+                });
+            }, 500);
+        </script>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -431,6 +508,61 @@ async def logs(request: Request,
             "file_logs": [],
             "error_message": f"로그 조회 오류: {str(e)}"
         })
+
+
+@app.get("/api/status")
+async def api_status(username: str = Depends(verify_credentials)):
+    """인스턴스 상태 API (표준 API)"""
+    if processor is None:
+        raise HTTPException(status_code=503, detail="시스템이 초기화 중입니다.")
+    
+    try:
+        import time
+        import psutil
+        from pathlib import Path
+        
+        # 각 폴더의 PDF 파일 수 계산
+        def count_pdfs(path: Path) -> int:
+            if not path.exists():
+                return 0
+            return len(list(path.rglob("*.pdf")))
+        
+        # 큐 상태
+        queue = {
+            "new": count_pdfs(processor.config.paths.scanner_output),
+            "pendingMerge": count_pdfs(processor.config.paths.pending),
+            "pendingUpload": count_pdfs(processor.config.paths.merged),
+            "uploaded": count_pdfs(processor.config.paths.uploaded),
+            "error": count_pdfs(processor.config.paths.error),
+        }
+        queue["total"] = sum(queue.values())
+        
+        # 디스크 여유 공간 (MB)
+        try:
+            disk_usage = psutil.disk_usage(str(processor.config.paths.data_root))
+            disk_free_mb = disk_usage.free // (1024 * 1024)
+        except Exception:
+            disk_free_mb = 0
+        
+        # 업타임 (프로세서 시작 시간 기준)
+        uptime_sec = int(time.time() - getattr(processor, '_start_time', time.time()))
+        
+        # 마지막 배치 시간
+        last_batch_at = None
+        if hasattr(processor, 'last_batch_time') and processor.last_batch_time:
+            last_batch_at = processor.last_batch_time.isoformat()
+        
+        return {
+            "uptimeSec": uptime_sec,
+            "queue": queue,
+            "diskFreeMB": disk_free_mb,
+            "lastBatchAt": last_batch_at,
+            "version": "2.0.0"
+        }
+        
+    except Exception as e:
+        logger.error(f"상태 조회 오류: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/stats")

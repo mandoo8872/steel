@@ -42,6 +42,11 @@ class QRScanProcessor:
         self._batch_task = None
         self._main_loop = None
         
+        # 상태 추적용 (API용)
+        import time
+        self._start_time = time.time()
+        self.last_batch_time = None
+        
         logger.info("QR 스캔 프로세서 초기화 완료")
     
     async def start(self):
@@ -292,6 +297,7 @@ class QRScanProcessor:
                     if self.batch_processor.is_idle():
                         logger.info("유휴 시간 도달 - 배치 처리 시작")
                         await self.batch_processor.process_batch()
+                        self.last_batch_time = datetime.utcnow()
                     
                     # 1분마다 체크
                     await asyncio.sleep(60)
@@ -312,6 +318,7 @@ class QRScanProcessor:
                     
                     logger.info("스케줄 도달 - 배치 처리 시작")
                     await self.batch_processor.process_batch()
+                    self.last_batch_time = datetime.utcnow()
                 
             except asyncio.CancelledError:
                 break
@@ -323,6 +330,7 @@ class QRScanProcessor:
         """강제 배치 처리 실행"""
         logger.info("강제 배치 처리 요청")
         await self.batch_processor.process_batch()
+        self.last_batch_time = datetime.utcnow()
     
     async def rescan_scanner_output(self):
         """scanner_output 폴더 재스캔 (완전 파일 기반)"""

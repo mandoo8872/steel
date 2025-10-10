@@ -1,0 +1,4 @@
+# PyInstaller 빌드 의존성
+pyinstaller==6.3.0
+pyinstaller-hooks-contrib==2024.0
+

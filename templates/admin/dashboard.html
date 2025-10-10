@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>통합 관리자 - Steel QR</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+        
+        /* 2단 레이아웃 */
+        .container-fluid {
+            height: 100vh;
+            display: flex;
+            padding: 0;
+        }
+        
+        /* 왼쪽: 인스턴스 목록 */
+        .instance-sidebar {
+            width: 200px;
+            height: 100vh;
+            background: #2c3e50;
+            border-right: 1px solid #34495e;
+            overflow-y: auto;
+            flex-shrink: 0;
+        }
+        
+        .instance-sidebar .header {
+            padding: 15px 10px;
+            background: #34495e;
+            border-bottom: 1px solid #2c3e50;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        
+        .instance-sidebar .header h6 {
+            margin: 0 0 8px 0;
+            font-weight: bold;
+            font-size: 12px;
+            color: #ecf0f1;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        /* 인스턴스 카드 - 더 작고 심플하게 */
+        .instance-card {
+            margin: 8px;
+            padding: 10px;
+            background: #34495e;
+            border: 1px solid #4a5f7f;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .instance-card:hover {
+            background: #3d566e;
+            border-color: #5dade2;
+        }
+        
+        .instance-card.active {
+            background: #5dade2;
+            border-color: #5dade2;
+        }
+        
+        .instance-card.offline {
+            opacity: 0.5;
+        }
+        
+        .instance-card .name {
+            font-weight: bold;
+            font-size: 12px;
+            margin-bottom: 5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: #ecf0f1;
+        }
+        
+        .instance-card .status-indicator {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        
+        .instance-card .status-indicator.online {
+            background: #2ecc71;
+        }
+        
+        .instance-card .status-indicator.offline {
+            background: #e74c3c;
+        }
+        
+        .instance-card .stats {
+            display: flex;
+            gap: 8px;
+            font-size: 10px;
+            color: #bdc3c7;
+        }
+        
+        .instance-card .stat-item {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+        }
+        
+        .instance-card .stat-item .value {
+            font-weight: bold;
+            color: #ecf0f1;
+        }
+        
+        .instance-card .stat-item .value.error {
+            color: #e74c3c;
+        }
+        
+        /* 오른쪽: 원격 제어 화면 */
+        .remote-control {
+            flex: 1;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background: white;
+        }
+        
+        .remote-control .toolbar {
+            padding: 12px 20px;
+            background: #34495e;
+            border-bottom: 1px solid #2c3e50;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .remote-control .toolbar .title {
+            font-weight: bold;
+            font-size: 14px;
+            color: #ecf0f1;
+        }
+        
+        .remote-control .toolbar .actions {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .remote-control .toolbar .btn {
+            font-size: 11px;
+            padding: 4px 12px;
+        }
+        
+        .remote-control .iframe-container {
+            flex: 1;
+            position: relative;
+            background: #f8f9fa;
+        }
+        
+        .remote-control iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        
+        .remote-control .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #6c757d;
+        }
+        
+        .remote-control .empty-state .icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+            opacity: 0.3;
+        }
+        
+        /* 스크롤바 스타일 */
+        .instance-sidebar::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        .instance-sidebar::-webkit-scrollbar-track {
+            background: #2c3e50;
+        }
+        
+        .instance-sidebar::-webkit-scrollbar-thumb {
+            background: #4a5f7f;
+            border-radius: 3px;
+        }
+        
+        .instance-sidebar::-webkit-scrollbar-thumb:hover {
+            background: #5a6f8f;
+        }
+        
+        /* 로딩 오버레이 */
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+    <script>
+        const adminPassword = '{{ config.system.admin_password if config else "1212" }}';
+    </script>
+    
+    <div class="container-fluid">
+        <!-- 왼쪽: 인스턴스 목록 -->
+        <div class="instance-sidebar">
+            <div class="header">
+                <h6>인스턴스</h6>
+                <div class="d-flex gap-1 mb-2">
+                    <button class="btn btn-sm btn-outline-light flex-fill" onclick="refreshInstances()" style="font-size: 10px; padding: 4px;">
+                        새로고침
+                    </button>
+                    <button class="btn btn-sm btn-outline-light flex-fill" onclick="window.location.href='/registry'" style="font-size: 10px; padding: 4px;">
+                        관리
+                    </button>
+                </div>
+            </div>
+            <div id="instanceList">
+                <div class="text-center py-3">
+                    <div class="spinner-border spinner-border-sm text-light" role="status">
+                        <span class="visually-hidden">로딩 중...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 오른쪽: 원격 제어 화면 -->
+        <div class="remote-control">
+            <div class="toolbar">
+                <div class="title" id="selectedInstanceName">인스턴스를 선택하세요</div>
+                <div class="actions">
+                    <button class="btn btn-sm btn-outline-light" onclick="openInNewTab()" id="btnOpenNew" style="display:none;">
+                        새 탭
+                    </button>
+                    <button class="btn btn-sm btn-outline-light" onclick="reloadIframe()" id="btnReload" style="display:none;">
+                        새로고침
+                    </button>
+                </div>
+            </div>
+            <div class="iframe-container" id="iframeContainer">
+                <div class="empty-state">
+                    <div class="icon">📊</div>
+                    <h5>인스턴스를 선택하세요</h5>
+                    <p>왼쪽에서 인스턴스를 선택하면 전체 관리 화면이 표시됩니다</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let instances = [];
+        let selectedInstance = null;
+        
+        // 페이지 로드 시 초기화
+        document.addEventListener('DOMContentLoaded', function() {
+            loadInstances();
+            
+            // 10초마다 자동 갱신
+            setInterval(loadInstances, 10000);
+        });
+        
+        // 인스턴스 목록 로드
+        async function loadInstances(reload = false) {
+            try {
+                const url = reload ? '/api/admin/instances/health?reload=true' : '/api/admin/instances/health';
+                const response = await fetch(url, {
+                    headers: {
+                        'Authorization': 'Basic ' + btoa('admin:' + adminPassword)
+                    }
+                });
+                
+                if (response.ok) {
+                    instances = await response.json();
+                    renderInstanceList();
+                } else {
+                    showError('인스턴스 목록을 불러올 수 없습니다');
+                }
+            } catch (error) {
+                console.error('인스턴스 로딩 오류:', error);
+                showError('네트워크 오류가 발생했습니다');
+            }
+        }
+        
+        // 새로고침 (레지스트리 리로드 포함)
+        function refreshInstances() {
+            loadInstances(true);
+        }
+        
+        // 인스턴스 목록 렌더링
+        function renderInstanceList() {
+            const container = document.getElementById('instanceList');
+            
+            if (instances.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-4">
+                        <p class="text-muted">등록된 인스턴스가 없습니다.</p>
+                        <a href="/registry" class="btn btn-sm btn-primary">인스턴스 추가</a>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = instances.map(inst => createInstanceCard(inst)).join('');
+        }
+        
+        // 인스턴스 카드 생성
+        function createInstanceCard(inst) {
+            const isOnline = inst.online;
+            const status = inst.status || {};
+            const queue = status.queue || {};
+            const isActive = selectedInstance && selectedInstance.instance_id === inst.instance_id;
+            
+            return `
+                <div class="instance-card ${isOnline ? '' : 'offline'} ${isActive ? 'active' : ''}" 
+                     onclick="selectInstance('${inst.instance_id}')">
+                    <div class="name">
+                        <span>${inst.label || inst.instance_id}</span>
+                        <span class="status-indicator ${isOnline ? 'online' : 'offline'}"></span>
+                    </div>
+                    ${isOnline ? `
+                        <div class="stats">
+                            <div class="stat-item">
+                                <span>큐</span>
+                                <span class="value">${queue.total || 0}</span>
+                            </div>
+                            <div class="stat-item">
+                                <span>오류</span>
+                                <span class="value ${queue.error > 0 ? 'error' : ''}">${queue.error || 0}</span>
+                            </div>
+                        </div>
+                    ` : '<div style="font-size:10px;color:#e74c3c;">오프라인</div>'}
+                </div>
+            `;
+        }
+        
+        // 인스턴스 선택
+        function selectInstance(instanceId) {
+            const inst = instances.find(i => i.instance_id === instanceId);
+            if (!inst) return;
+            
+            selectedInstance = inst;
+            
+            // 카드 활성화 표시 업데이트
+            renderInstanceList();
+            
+            // 원격 제어 화면 로드
+            loadRemoteControl(inst);
+        }
+        
+        // 원격 제어 화면 로드
+        function loadRemoteControl(inst) {
+            const container = document.getElementById('iframeContainer');
+            const titleEl = document.getElementById('selectedInstanceName');
+            const btnOpenNew = document.getElementById('btnOpenNew');
+            const btnReload = document.getElementById('btnReload');
+            
+            if (!inst.online) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="icon">⚠️</div>
+                        <h5>인스턴스 오프라인</h5>
+                        <p>${inst.label || inst.instance_id}에 연결할 수 없습니다</p>
+                    </div>
+                `;
+                titleEl.textContent = `${inst.label} (오프라인)`;
+                btnOpenNew.style.display = 'none';
+                btnReload.style.display = 'none';
+                return;
+            }
+            
+            // 로딩 표시
+            container.innerHTML = `
+                <div class="loading-overlay">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">로딩 중...</span>
+                    </div>
+                </div>
+            `;
+            
+            // iframe 생성 및 로드
+            setTimeout(() => {
+                const iframe = document.createElement('iframe');
+                iframe.src = `${inst.baseUrl}`;
+                iframe.onload = function() {
+                    console.log('원격 제어 화면 로드 완료:', inst.baseUrl);
+                };
+                iframe.onerror = function() {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <div class="icon">❌</div>
+                            <h5>로딩 실패</h5>
+                            <p>인스턴스를 불러올 수 없습니다</p>
+                        </div>
+                    `;
+                };
+                
+                container.innerHTML = '';
+                container.appendChild(iframe);
+                
+                titleEl.textContent = inst.label || inst.instance_id;
+                btnOpenNew.style.display = 'inline-block';
+                btnReload.style.display = 'inline-block';
+            }, 300);
+        }
+        
+        // 새 탭에서 열기
+        function openInNewTab() {
+            if (selectedInstance && selectedInstance.baseUrl) {
+                window.open(selectedInstance.baseUrl, '_blank');
+            }
+        }
+        
+        // iframe 새로고침
+        function reloadIframe() {
+            if (selectedInstance) {
+                loadRemoteControl(selectedInstance);
+            }
+        }
+        
+        // 에러 표시
+        function showError(message) {
+            const container = document.getElementById('instanceList');
+            container.innerHTML = `
+                <div class="alert alert-danger m-3" role="alert">
+                    ${message}
+                </div>
+            `;
+        }
+    </script>
+</body>
+</html>

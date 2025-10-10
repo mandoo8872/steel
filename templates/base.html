@@ -78,6 +78,11 @@
     {% block extra_css %}{% endblock %}
 </head>
 <body>
+    <script>
+        // 전역 변수
+        const adminPassword = '{{ config.system.admin_password if config else "1212" }}';
+    </script>
+    
     <!-- 네비게이션 바 -->
     <nav class="navbar navbar-dark bg-dark fixed-top">
         <div class="container-fluid">

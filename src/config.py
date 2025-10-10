@@ -18,6 +18,8 @@ class SystemConfig:
     worker_count: int = 3
     web_port: int = 8000
     admin_password: str = "1212"
+    mode: str = "kiosk"  # kiosk, admin
+    instance_registry_url: str = ""  # 중앙 레지스트리 URL
 
 
 @dataclass
