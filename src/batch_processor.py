@@ -427,9 +427,11 @@ class BatchProcessor:
                     item.retry_count += 1
                     
                     if item.retry_count >= self.config.retry.max_attempts:
-                        # 최대 재시도 초과 - error 폴더로 이동
-                        await self._move_to_error(file_path, f"업로드 실패: {result.get('message', '')}")
-                        self.db_session.delete(item)
+                        # 최대 재시도 초과 - 재시도 카운트 리셋하고 계속 시도
+                        logger.warning(f"업로드 최대 재시도 횟수 도달: {item.transport_no} - 재시도 카운트 리셋")
+                        item.retry_count = 0  # 재시도 카운트 리셋
+                        # 다음 재시도 시간을 최대 대기 시간으로 설정 (1시간)
+                        item.next_retry_at = datetime.utcnow() + timedelta(seconds=self.config.retry.max_delay)
                     else:
                         # 다음 재시도 시간 계산
                         delay = min(
@@ -438,7 +440,7 @@ class BatchProcessor:
                         )
                         item.next_retry_at = datetime.utcnow() + timedelta(seconds=delay)
                     
-                    logger.warning(f"업로드 실패: {item.transport_no} - {result.get('message', '')}")
+                    logger.warning(f"업로드 실패: {item.transport_no} - {result.get('message', '')} (다음 재시도: {item.next_retry_at})")
                 
                 self.db_session.commit()
                 
