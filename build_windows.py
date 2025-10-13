@@ -122,6 +122,8 @@ def build_windows_exe():
     print("  ✓ firewall_setup.bat   - 방화벽 설정 (관리자 권한)")
     print("  ✓ firewall_remove.bat  - 방화벽 규칙 제거")
     print("  ✓ check_ip.bat         - IP 주소 확인")
+    print("  ✓ setup_static_ip.bat  - 고정 IP 설정 (권장)")
+    print("  ✓ update_instance_ip.bat - IP 변경 도구")
     print("  ✓ stop_steel_qr.bat    - 애플리케이션 종료")
     print("  ✓ README.txt           - 사용 설명서")
     print("  ✓ config.yaml          - 기본 설정 파일")
@@ -136,7 +138,7 @@ def build_windows_exe():
 
 def post_build_setup(dist_dir: Path):
     """빌드 후 필수 파일 복사"""
-    print("\n[1/6] templates 폴더 복사 중...")
+    print("\n[1/9] templates 폴더 복사 중...")
     src_templates = Path("templates")
     dst_templates = dist_dir / "templates"
     if src_templates.exists():
@@ -147,7 +149,7 @@ def post_build_setup(dist_dir: Path):
     else:
         print(f"      ⚠ templates 폴더를 찾을 수 없습니다")
     
-    print("\n[2/6] static 폴더 복사 중...")
+    print("\n[2/9] static 폴더 복사 중...")
     src_static = Path("static")
     dst_static = dist_dir / "static"
     if src_static.exists():
@@ -158,7 +160,7 @@ def post_build_setup(dist_dir: Path):
     else:
         print(f"      ⚠ static 폴더를 찾을 수 없습니다")
     
-    print("\n[3/6] config.yaml 복사 중...")
+    print("\n[3/7] config.yaml 복사 중...")
     src_config = Path("config.yaml")
     src_config_example = Path("config.example.yaml")
     dst_config = dist_dir / "config.yaml"
@@ -172,7 +174,22 @@ def post_build_setup(dist_dir: Path):
     else:
         print(f"      ⚠ config.yaml 파일을 찾을 수 없습니다")
     
-    print("\n[4/6] 실행 배치 파일 복사 중...")
+    print("\n[4/7] instances.json 생성 중...")
+    dst_instances = dist_dir / "instances.json"
+    if not dst_instances.exists():
+        # 빈 instances.json 파일 생성
+        import json
+        instances_data = {
+            "version": 1,
+            "instances": []
+        }
+        with open(dst_instances, 'w', encoding='utf-8') as f:
+            json.dump(instances_data, f, indent=2, ensure_ascii=False)
+        print(f"      ✓ instances.json 생성 완료")
+    else:
+        print(f"      ✓ instances.json (이미 존재)")
+    
+    print("\n[5/7] 실행 배치 파일 복사 중...")
     batch_files = ["run_kiosk.bat", "run_admin.bat"]
     for batch_file in batch_files:
         src_batch = Path(batch_file)
@@ -189,7 +206,7 @@ def post_build_setup(dist_dir: Path):
         else:
             print(f"      ⚠ {batch_file}을 찾을 수 없습니다")
     
-    print("\n[5/8] 방화벽 배치 파일 복사 중...")
+    print("\n[6/7] 방화벽 배치 파일 복사 중...")
     firewall_files = ["firewall_setup.bat", "firewall_remove.bat"]
     for fw_file in firewall_files:
         src_fw = Path(fw_file)
@@ -200,7 +217,7 @@ def post_build_setup(dist_dir: Path):
         else:
             print(f"      ⚠ {fw_file}을 찾을 수 없습니다")
     
-    print("\n[6/8] 종료 배치 파일 복사 중...")
+    print("\n[7/7] 종료 배치 파일 복사 중...")
     src_stop = Path("stop_steel_qr.bat")
     if src_stop.exists():
         dst_stop = dist_dir / "stop_steel_qr.bat"
@@ -209,16 +226,18 @@ def post_build_setup(dist_dir: Path):
     else:
         print(f"      ⚠ stop_steel_qr.bat을 찾을 수 없습니다")
     
-    print("\n[7/8] IP 확인 배치 파일 복사 중...")
-    src_check_ip = Path("check_ip.bat")
-    if src_check_ip.exists():
-        dst_check_ip = dist_dir / "check_ip.bat"
-        shutil.copy2(src_check_ip, dst_check_ip)
-        print(f"      ✓ check_ip.bat")
-    else:
-        print(f"      ⚠ check_ip.bat을 찾을 수 없습니다")
+    print("\n[8/9] IP 관리 배치 파일 복사 중...")
+    ip_scripts = ["check_ip.bat", "setup_static_ip.bat", "update_instance_ip.bat"]
+    for ip_script in ip_scripts:
+        src_ip = Path(ip_script)
+        if src_ip.exists():
+            dst_ip = dist_dir / ip_script
+            shutil.copy2(src_ip, dst_ip)
+            print(f"      ✓ {ip_script}")
+        else:
+            print(f"      ⚠ {ip_script}을 찾을 수 없습니다")
     
-    print("\n[8/8] README.txt 생성 중...")
+    print("\n[9/9] README.txt 생성 중...")
     # 항상 최신 버전으로 덮어쓰기
     src_readme = dist_dir / "README.txt"
     readme_content = """========================================
@@ -292,9 +311,12 @@ config.yaml에서 변경 가능
 ✓ firewall_setup.bat    방화벽 설정
 ✓ firewall_remove.bat   방화벽 규칙 제거
 ✓ check_ip.bat          내 IP 주소 확인
+✓ setup_static_ip.bat   고정 IP 설정 안내
+✓ update_instance_ip.bat IP 변경 시 인스턴스 수정 도구
 ✓ stop_steel_qr.bat     애플리케이션 종료
 ✓ README.txt            이 파일
 ✓ config.yaml           설정 파일
+✓ instances.json        인스턴스 레지스트리 (자동 생성됨)
 ✓ templates/            HTML 템플릿
 ✓ static/               정적 파일
 
@@ -321,7 +343,13 @@ config.yaml에서 변경 가능
 2. 내 IP 주소를 모르겠음
    → check_ip.bat 실행
 
-3. 포트가 이미 사용 중
+3. IP 주소가 자주 변경됨
+   → setup_static_ip.bat으로 고정 IP 설정 (권장)
+
+4. 키오스크 IP가 변경됨
+   → update_instance_ip.bat 실행 후 관리자 UI에서 수정
+
+5. 포트가 이미 사용 중
    → stop_steel_qr.bat으로 기존 프로세스 종료
 
 4. templates 폴더가 없다는 오류

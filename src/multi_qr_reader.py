@@ -3,6 +3,8 @@
 """
 import re
 import time
+import os
+import platform
 from typing import List, Tuple, Optional, Dict, Any
 from pathlib import Path
 from PIL import Image
@@ -26,6 +28,11 @@ class MultiQRReader:
         self.config = config
         self.pattern = re.compile(config.pattern)
         
+        # Poppler 경로 자동 감지 (Windows)
+        self.poppler_path = self._find_poppler_path()
+        if self.poppler_path:
+            logger.info(f"Poppler 경로 감지: {self.poppler_path}")
+        
         # 엔진 초기화
         self.engines = self._initialize_engines()
         
@@ -37,6 +44,31 @@ class MultiQRReader:
         logger.info(f"다중 QR 리더 초기화 완료 - 패턴: {config.pattern}")
         logger.info(f"엔진 순서: {config.engine_order}")
         logger.info(f"사용 가능한 엔진: {[name for name, engine in self.engines.items() if engine.is_available()]}")
+    
+    def _find_poppler_path(self) -> Optional[str]:
+        """Poppler 경로 자동 감지"""
+        if platform.system() == 'Windows':
+            # Windows에서 일반적인 Poppler 설치 경로
+            common_paths = [
+                r"C:\Program Files\poppler\Library\bin",
+                r"C:\Program Files (x86)\poppler\Library\bin",
+                r"C:\poppler\Library\bin",
+            ]
+            
+            for path in common_paths:
+                if os.path.exists(path) and os.path.exists(os.path.join(path, "pdftoppm.exe")):
+                    return path
+        
+        # PATH에서 찾기
+        try:
+            if platform.system() == 'Windows':
+                import shutil
+                if shutil.which("pdftoppm.exe"):
+                    return None  # PATH에 있으면 None 반환 (pdf2image가 자동으로 찾음)
+        except:
+            pass
+        
+        return None
     
     def _initialize_engines(self) -> Dict[str, QREngine]:
         """QR 엔진들 초기화"""
@@ -187,7 +219,8 @@ class MultiQRReader:
                     first_page=1,
                     last_page=1,
                     output_folder=temp_dir,
-                    fmt='png'
+                    fmt='png',
+                    poppler_path=self.poppler_path
                 )
                 
                 if test_images:
@@ -242,7 +275,8 @@ class MultiQRReader:
                     str(pdf_path),
                     dpi=optimal_dpi,
                     output_folder=temp_dir,
-                    fmt='png'
+                    fmt='png',
+                    poppler_path=self.poppler_path
                 )
                 
                 processing_info['total_pages'] = len(images)

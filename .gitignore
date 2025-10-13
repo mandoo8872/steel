@@ -51,3 +51,15 @@ uploaded/
 temp/
 tmp/
 *.tmp
+
+# 빌드 결과물
+build/
+dist/
+*.spec
+
+# 인스턴스 설정 (로컬)
+instances.json
+instances.local.json
+
+# 시스템 에러 로그
+sys.stderr

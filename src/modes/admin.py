@@ -54,10 +54,27 @@ def run_admin_mode(
     logger.info(f"감사 로그: {audit_log_path}")
     
     # 레지스트리 관리자 초기화
+    # 실행 파일 위치 기준으로 instances.json 경로 설정
+    import sys
+    import os
+    
+    # 실행 파일의 디렉토리 찾기
+    if getattr(sys, 'frozen', False):
+        # PyInstaller로 빌드된 실행 파일
+        app_dir = Path(os.path.dirname(sys.executable))
+    else:
+        # 일반 Python 스크립트
+        app_dir = Path.cwd()
+    
+    # instances.json 파일 경로 (실행 파일과 같은 위치)
+    instances_file = app_dir / "instances.json"
+    
     registry_manager = RegistryManager(
         remote_url=registry_url,
-        local_path=Path("instances.local.json")
+        local_path=instances_file
     )
+    
+    logger.info(f"인스턴스 레지스트리 파일: {instances_file}")
     
     if registry_manager.load():
         instances = registry_manager.list_instances()

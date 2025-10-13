@@ -746,11 +746,19 @@ async def api_documents(folder: Optional[str] = None,
                         "error": "ERROR"
                     }
                     
+                    # 프로젝트 루트 기준 상대 경로 계산
+                    try:
+                        rel_path = pdf_file.relative_to(Path.cwd())
+                        file_path_str = str(rel_path).replace('\\', '/')
+                    except ValueError:
+                        # 상대 경로 계산 실패 시 절대 경로 사용
+                        file_path_str = str(pdf_file).replace('\\', '/')
+                    
                     result.append({
                         "id": f"{folder_name}_{pdf_file.name}",  # 고유 ID
                         "transport_no": transport_no,
                         "original_filename": pdf_file.name,
-                        "file_path": str(pdf_file),
+                        "file_path": file_path_str,
                         "status": status_map[folder_name],
                         "folder": folder_name,
                         "file_size": stat.st_size,
@@ -1006,8 +1014,22 @@ async def pdf_preview(file: str, username: str = Depends(verify_credentials)):
         # 파일 경로 검증
         file_path = Path(file)
         
-        # 보안을 위한 경로 검증
+        # 상대 경로인 경우 프로젝트 루트 기준으로 변환
+        if not file_path.is_absolute():
+            file_path = Path.cwd() / file_path
+        
+        # 보안: 프로젝트 루트 하위인지 확인
+        try:
+            file_path = file_path.resolve()
+            project_root = Path.cwd().resolve()
+            file_path.relative_to(project_root)
+        except ValueError:
+            logger.error(f"보안 경고: 프로젝트 외부 파일 접근 시도: {file}")
+            raise HTTPException(status_code=403, detail="접근이 거부되었습니다.")
+        
+        # 파일 존재 확인
         if not file_path.exists() or not file_path.is_file():
+            logger.error(f"PDF 미리보기 실패: 파일을 찾을 수 없음 - {file_path}")
             raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다.")
         
         if not file_path.suffix.lower() == '.pdf':
@@ -1017,6 +1039,8 @@ async def pdf_preview(file: str, username: str = Depends(verify_credentials)):
         with open(file_path, 'rb') as pdf_file:
             pdf_content = pdf_file.read()
         
+        logger.info(f"PDF 미리보기 성공: {file_path.name}")
+        
         return Response(
             content=pdf_content,
             media_type="application/pdf",
@@ -1025,8 +1049,10 @@ async def pdf_preview(file: str, username: str = Depends(verify_credentials)):
                 "Cache-Control": "no-cache"
             }
         )
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"PDF 미리보기 오류: {e}")
+        logger.error(f"PDF 미리보기 오류: {file} - {e}")
         raise HTTPException(status_code=500, detail=f"PDF 로드 실패: {str(e)}")
 
 
@@ -1075,12 +1101,20 @@ async def api_errors(username: str = Depends(verify_credentials)):
                 else:
                     error_message = "처리 오류"
                 
+                # 프로젝트 루트 기준 상대 경로 계산
+                try:
+                    rel_path = pdf_file.relative_to(Path.cwd())
+                    file_path_str = str(rel_path).replace('\\', '/')
+                except ValueError:
+                    # 상대 경로 계산 실패 시 절대 경로 사용
+                    file_path_str = str(pdf_file).replace('\\', '/')
+                
                 result.append({
                     'id': f"error_{pdf_file.name}",
                     'transport_no': transport_no,
                     'original_filename': pdf_file.name,
                     'error_message': error_message,
-                    'file_path': str(pdf_file),
+                    'file_path': file_path_str,
                     'file_size': stat.st_size,
                     'created_at': datetime.fromtimestamp(stat.st_ctime).isoformat(),
                     'modified_at': datetime.fromtimestamp(stat.st_mtime).isoformat(),

@@ -1,16 +1,18 @@
 @echo off
+chcp 65001 >nul 2>&1
+cls
 echo ========================================
-echo 내 IP 주소 확인
+echo Check My IP Address
 echo ========================================
 echo.
 
-REM IPv4 주소만 표시
+REM Show IPv4 address only
 for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /C:"IPv4"') do (
-    echo 내 IP: %%a
+    echo My IP: %%a
 )
 
 echo.
-echo 이 IP를 관리자 모드에 등록하세요.
+echo Register this IP in Admin Mode.
 echo.
 pause
 
