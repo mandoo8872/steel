@@ -1,0 +1,141 @@
+# QR 스캔 관리 시스템 설정 파일
+
+# 시스템 기본 설정
+system:
+  # 로그 레벨: DEBUG, INFO, WARNING, ERROR
+  log_level: INFO
+  # 워커 프로세스 수 (2-4 권장)
+  worker_count: 3
+  # 관리자 UI 포트
+  web_port: 8000
+  # 관리자 비밀번호
+  admin_password: "1212"
+
+# 파일 경로 설정
+paths:
+  # 스캐너 출력 폴더 (감시 대상)
+  scanner_output: "/data/scanner_output"
+  # 데이터 루트 경로
+  data_root: "/data/qr_system"
+  # 하위 폴더는 자동 생성: pending, merged, uploaded, error, logs
+
+# 폴더 감시 설정
+watcher:
+  # 감시 방식: "realtime" (파일시스템 이벤트) 또는 "polling" (주기적 스캔)
+  mode: "realtime"
+  # 폴링 주기 (초) - polling 모드에서만 사용
+  polling_interval: 30
+  # 파일 안정화 대기 시간 (초) - 파일 크기가 변하지 않을 때까지 대기
+  stability_wait: 3
+  # 파일 크기 확인 횟수
+  stability_checks: 3
+
+# QR 인식 설정 (다중 엔진 지원)
+qr:
+  # QR 정규식 패턴 (기본: 14자리 숫자)
+  pattern: "^\\d{14}$"
+  # 다중 QR 검출 시 처리: "error" (에러 폴더로 이동) 또는 "manual" (UI에서 선택)
+  multiple_qr_action: "manual"
+  
+  # 적응형 DPI 설정
+  adaptive_dpi: true  # true: 자동 DPI 조정, false: 고정 DPI 사용
+  fixed_dpi: 200      # adaptive_dpi가 false일 때 사용할 고정 DPI
+  dpi_candidates: [200, 150, 250, 180, 220, 120, 300]  # 시도할 DPI 목록 (우선순위 순)
+  
+  # 다중 엔진 설정
+  # 엔진 처리 순서: ZBAR (빠름) -> ZXING (기울기/훼손 강함) -> PYZBAR_PREPROC (대비 낮은/번진 QR 보강)
+  engine_order: ["ZBAR", "ZXING", "PYZBAR_PREPROC"]
+  
+  # 실패 이미지 저장 (디버깅용)
+  save_failed_images: true
+  failed_images_path: "data/qr_debug"
+  
+  # ZBar 엔진 설정 (기본 방식, 빠름)
+  zbar:
+    enabled: true
+    timeout: 30
+    options: {}
+  
+  # ZXing 엔진 설정 (구글 기반, 기울기·훼손 QR에 강함)
+  zxing:
+    enabled: true
+    timeout: 60
+    options:
+      try_harder: true
+      formats: ["QR_CODE"]
+  
+  # Pyzbar + OpenCV 전처리 엔진 설정 (대비 낮은/번진 QR에 보강)
+  pyzbar_preproc:
+    enabled: true
+    timeout: 90
+    options:
+      adaptive_threshold: true  # 적응형 임계값 처리
+      deskew: true             # 기울기 보정
+      sharpen: true            # 선명화
+      blur_removal: true       # 블러 제거
+
+# PDF 처리 설정
+pdf:
+  # PDF 정규화 활성화
+  normalize: true
+  # PDF/A 변환 활성화
+  pdf_a_convert: false
+  # 중복 페이지 제거
+  remove_duplicates: true
+  # 중복 판단 해시 알고리즘: "md5" 또는 "sha1"
+  hash_algorithm: "sha1"
+
+# 배치 처리 설정
+batch:
+  # 배치 트리거 방식: "idle" (유휴 시간) 또는 "schedule" (정기 실행)
+  trigger_mode: "idle"
+  # 유휴 시간 (분) - idle 모드에서만 사용
+  idle_minutes: 5
+  # 스케줄 (cron 형식) - schedule 모드에서만 사용
+  schedule: "*/30 * * * *"  # 30분마다
+
+# 업로드 설정
+upload:
+  # 업로드 타입: "nas" 또는 "http" 또는 "both"
+  type: "nas"
+  
+  # NAS 설정
+  nas:
+    # 대상 경로
+    path: "//nas.company.local/documents/qr_scans"
+    # 사용자명 (옵션)
+    username: ""
+    # 비밀번호 (옵션 - 암호화 저장됨)
+    password: ""
+  
+  # HTTP 설정
+  http:
+    # API 엔드포인트
+    endpoint: "https://api.company.local/upload"
+    # 인증 토큰 (암호화 저장됨)
+    token: ""
+    # 타임아웃 (초)
+    timeout: 60
+    # 최대 파일 크기 (MB)
+    max_file_size: 100
+
+# 재시도 정책
+retry:
+  # 최대 재시도 횟수
+  max_attempts: 5
+  # 초기 대기 시간 (초)
+  initial_delay: 60
+  # 지수 백오프 배수
+  backoff_multiplier: 2
+  # 최대 대기 시간 (초)
+  max_delay: 3600
+
+# 보관 정책
+retention:
+  # 업로드 완료 파일 보관 기간 (일)
+  uploaded_days: 60
+  # 에러 파일 보관 기간 (일)
+  error_days: 90
+  # 로그 파일 보관 기간 (일)
+  log_days: 30
+

@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>레지스트리 편집 - Steel QR</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #2c3e50;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            min-height: 100vh;
+        }
+        
+        .registry-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header-bar {
+            background: #34495e;
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header-bar h4 {
+            color: #ecf0f1;
+            margin: 0;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        
+        .header-bar .btn-group {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .btn-back {
+            background: #95a5a6;
+            color: white;
+            border: none;
+            padding: 6px 16px;
+            font-size: 13px;
+            border-radius: 4px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .btn-back:hover {
+            background: #7f8c8d;
+        }
+        
+        .registry-editor {
+            background: #34495e;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            padding: 20px;
+        }
+        
+        .instance-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+            padding: 12px;
+            background: #2c3e50;
+            border: 1px solid #4a5f7f;
+            border-radius: 6px;
+            align-items: start;
+        }
+        
+        .instance-row input,
+        .instance-row select {
+            font-size: 12px;
+            padding: 6px 10px;
+            background: #4a5f7f;
+            border: 1px solid #5a6f8f;
+            color: #ecf0f1;
+            border-radius: 4px;
+        }
+        
+        .instance-row input:focus,
+        .instance-row select:focus {
+            background: #5a6f8f;
+            border-color: #5dade2;
+            outline: none;
+        }
+        
+        .instance-row .form-label {
+            font-size: 10px;
+            margin-bottom: 2px;
+            font-weight: bold;
+            color: #bdc3c7;
+        }
+        
+        .instance-row .col-actions {
+            display: flex;
+            gap: 4px;
+            align-items: end;
+        }
+        
+        .btn {
+            font-size: 12px;
+            padding: 6px 14px;
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
+        }
+        
+        .btn-primary {
+            background: #3498db;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #2980b9;
+        }
+        
+        .btn-success {
+            background: #27ae60;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background: #229954;
+        }
+        
+        .btn-secondary {
+            background: #95a5a6;
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background: #7f8c8d;
+        }
+        
+        .btn-info {
+            background: #16a085;
+            color: white;
+        }
+        
+        .btn-info:hover {
+            background: #138d75;
+        }
+        
+        .btn-danger {
+            background: #e74c3c;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background: #c0392b;
+        }
+        
+        .btn-test {
+            background: #17a2b8;
+            color: white;
+        }
+        
+        .btn-test:hover {
+            background: #138496;
+        }
+        
+        .test-result {
+            font-size: 10px;
+            margin-top: 4px;
+            color: #ecf0f1;
+        }
+        
+        .test-result.success {
+            color: #2ecc71;
+        }
+        
+        .test-result.error {
+            color: #e74c3c;
+        }
+        
+        .action-buttons {
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <script>
+        const adminPassword = '{{ config.system.admin_password if config else "1212" }}';
+    </script>
+    
+    <div class="registry-container">
+        <div class="header-bar">
+            <div>
+                <h4>인스턴스 레지스트리 편집</h4>
+            </div>
+            <div class="btn-group">
+                <a href="/" class="btn-back">
+                    ← 대시보드로 돌아가기
+                </a>
+                <button class="btn btn-success" onclick="saveRegistry()">저장</button>
+                <button class="btn btn-secondary" onclick="loadRegistry()">다시 불러오기</button>
+                <button class="btn btn-info" onclick="exportRegistry()">내보내기</button>
+            </div>
+        </div>
+        
+        <div class="registry-editor">
+            <div class="action-buttons">
+                <button class="btn btn-primary" onclick="addInstance()">+ 인스턴스 추가</button>
+            </div>
+            
+            <div id="instancesContainer">
+                <div class="text-center py-4">
+                    <div class="spinner-border text-light" role="status">
+                        <span class="visually-hidden">로딩 중...</span>
+                    </div>
+                    <p class="mt-2" style="color: #ecf0f1;">레지스트리를 불러오는 중...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let instances = [];
+        
+        // 페이지 로드 시 초기화
+        document.addEventListener('DOMContentLoaded', function() {
+            loadRegistry();
+        });
+        
+        // 레지스트리 로드
+        async function loadRegistry() {
+            try {
+                const response = await fetch('/api/admin/instances', {
+                    headers: {
+                        'Authorization': 'Basic ' + btoa('admin:' + adminPassword)
+                    }
+                });
+                
+                if (response.ok) {
+                    instances = await response.json();
+                    renderInstances();
+                } else {
+                    showError('레지스트리를 불러올 수 없습니다');
+                }
+            } catch (error) {
+                console.error('레지스트리 로딩 오류:', error);
+                showError('네트워크 오류가 발생했습니다');
+            }
+        }
+        
+        // 인스턴스 렌더링
+        function renderInstances() {
+            const container = document.getElementById('instancesContainer');
+            
+            if (instances.length === 0) {
+                container.innerHTML = `
+                    <div class="alert alert-info">
+                        등록된 인스턴스가 없습니다. "인스턴스 추가" 버튼을 클릭하여 추가하세요.
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = instances.map((inst, index) => createInstanceRow(inst, index)).join('');
+        }
+        
+        // 인스턴스 행 생성
+        function createInstanceRow(inst, index) {
+            return `
+                <div class="instance-row" data-index="${index}">
+                    <div style="flex: 0 0 40px; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #666;">
+                        ${index + 1}
+                    </div>
+                    
+                    <div style="flex: 1;">
+                        <label class="form-label">ID</label>
+                        <input type="text" class="form-control" value="${inst.id}" onchange="updateInstance(${index}, 'id', this.value)">
+                    </div>
+                    
+                    <div style="flex: 1.5;">
+                        <label class="form-label">라벨</label>
+                        <input type="text" class="form-control" value="${inst.label}" onchange="updateInstance(${index}, 'label', this.value)">
+                    </div>
+                    
+                    <div style="flex: 2;">
+                        <label class="form-label">주소 (Base URL)</label>
+                        <input type="text" class="form-control" value="${inst.baseUrl}" onchange="updateInstance(${index}, 'baseUrl', this.value)" placeholder="http://10.0.1.21:8000">
+                    </div>
+                    
+                    <div style="flex: 0.8;">
+                        <label class="form-label">역할</label>
+                        <select class="form-select" onchange="updateInstance(${index}, 'role', this.value)">
+                            <option value="kiosk" ${inst.role === 'kiosk' ? 'selected' : ''}>kiosk</option>
+                            <option value="admin" ${inst.role === 'admin' ? 'selected' : ''}>admin</option>
+                        </select>
+                    </div>
+                    
+                    <div style="flex: 1;">
+                        <label class="form-label">인증 타입</label>
+                        <select class="form-select" onchange="updateInstance(${index}, 'auth.type', this.value)">
+                            <option value="basic" ${inst.auth.type === 'basic' ? 'selected' : ''}>basic</option>
+                            <option value="jwt" ${inst.auth.type === 'jwt' ? 'selected' : ''}>jwt</option>
+                            <option value="token" ${inst.auth.type === 'token' ? 'selected' : ''}>token</option>
+                        </select>
+                    </div>
+                    
+                    <div style="flex: 1;">
+                        <label class="form-label">Username</label>
+                        <input type="text" class="form-control" value="${inst.auth.username || ''}" onchange="updateInstance(${index}, 'auth.username', this.value)">
+                    </div>
+                    
+                    <div style="flex: 1;">
+                        <label class="form-label">Password</label>
+                        <input type="password" class="form-control" value="${inst.auth.password || ''}" onchange="updateInstance(${index}, 'auth.password', this.value)">
+                    </div>
+                    
+                    <div class="col-actions" style="flex: 0 0 auto;">
+                        <div>
+                            <label class="form-label">&nbsp;</label>
+                            <div class="d-flex gap-1">
+                                <button class="btn btn-sm btn-test" onclick="testInstance(${index})">테스트</button>
+                                <button class="btn btn-sm btn-danger" onclick="removeInstance(${index})">삭제</button>
+                            </div>
+                            <div id="testResult${index}" class="test-result"></div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // 인스턴스 추가
+        function addInstance() {
+            instances.push({
+                id: `kiosk-${instances.length + 1}`,
+                label: `키오스크 ${instances.length + 1}`,
+                baseUrl: 'http://10.0.1.10:8000',
+                role: 'kiosk',
+                auth: {
+                    type: 'basic',
+                    username: 'admin',
+                    password: '1212'
+                }
+            });
+            renderInstances();
+        }
+        
+        // 인스턴스 업데이트
+        function updateInstance(index, field, value) {
+            if (field.startsWith('auth.')) {
+                const authField = field.split('.')[1];
+                instances[index].auth[authField] = value;
+            } else {
+                instances[index][field] = value;
+            }
+        }
+        
+        // 인스턴스 삭제
+        function removeInstance(index) {
+            if (confirm('이 인스턴스를 삭제하시겠습니까?')) {
+                instances.splice(index, 1);
+                renderInstances();
+            }
+        }
+        
+        // 인스턴스 테스트 (연결 확인) - 서버 프록시 사용
+        async function testInstance(index) {
+            const inst = instances[index];
+            const resultEl = document.getElementById(`testResult${index}`);
+            
+            resultEl.textContent = '테스트 중...';
+            resultEl.className = 'test-result';
+            
+            try {
+                console.log('테스트 시작:', inst.baseUrl);
+                
+                // 서버 API를 통해 테스트 (CORS 문제 해결)
+                const response = await fetch('/api/admin/test-instance', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Basic ' + btoa('admin:' + adminPassword)
+                    },
+                    body: JSON.stringify({
+                        baseUrl: inst.baseUrl,
+                        auth: inst.auth
+                    })
+                });
+                
+                console.log('응답 상태:', response.status);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const result = await response.json();
+                console.log('응답 결과:', result);
+                
+                if (result.success) {
+                    const statusInfo = result.status ? ` (업타임: ${Math.floor(result.status.uptimeSec/60)}분)` : '';
+                    resultEl.textContent = `✓ 연결 성공${statusInfo}`;
+                    resultEl.className = 'test-result success';
+                } else {
+                    const msg = result.message || '알 수 없는 오류';
+                    resultEl.textContent = `✗ ${msg}`;
+                    resultEl.className = 'test-result error';
+                    console.error('연결 실패:', msg);
+                }
+            } catch (error) {
+                console.error('테스트 오류:', error);
+                resultEl.textContent = `✗ 연결 실패: ${error.message || '알 수 없는 오류'}`;
+                resultEl.className = 'test-result error';
+            }
+        }
+        
+        // 레지스트리 저장
+        async function saveRegistry() {
+            if (!confirm('레지스트리를 저장하시겠습니까?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/admin/instances', {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Basic ' + btoa('admin:' + adminPassword)
+                    },
+                    body: JSON.stringify(instances)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert(`저장 완료: ${result.count}개 인스턴스`);
+                } else {
+                    alert('저장 실패: ' + (result.message || '알 수 없는 오류'));
+                }
+            } catch (error) {
+                console.error('저장 오류:', error);
+                alert('저장 중 오류가 발생했습니다');
+            }
+        }
+        
+        // 레지스트리 내보내기
+        async function exportRegistry() {
+            try {
+                const response = await fetch('/api/admin/instances/export', {
+                    headers: {
+                        'Authorization': 'Basic ' + btoa('admin:' + adminPassword)
+                    }
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'instances.json';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                } else {
+                    alert('내보내기 실패');
+                }
+            } catch (error) {
+                console.error('내보내기 오류:', error);
+                alert('내보내기 중 오류가 발생했습니다');
+            }
+        }
+        
+        // 에러 표시
+        function showError(message) {
+            const container = document.getElementById('instancesContainer');
+            container.innerHTML = `
+                <div class="alert alert-danger">${message}</div>
+            `;
+        }
+    </script>
+</body>
+</html>
+

@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+ENV/
+
+# 프로젝트 관련
+config.yaml
+.encryption_key
+data/
+logs/
+*.log
+
+# 테스트
+.pytest_cache/
+.coverage
+htmlcov/
+tests/test_pdfs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# 백업
+backup/
+*.bak
+*.backup
+
+# 데이터베이스
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# 업로드/임시 파일
+uploaded/
+temp/
+tmp/
+*.tmp

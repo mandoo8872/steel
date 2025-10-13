@@ -1,0 +1,326 @@
+<!-- 
+인스턴스 선택 바 (공통 컴포넌트)
+모든 페이지 최상단에 고정 표시
+-->
+
+<style>
+.instance-selector-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    background: #ffffff;
+    border-bottom: 2px solid #e0e0e0;
+    padding: 8px 16px;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.instance-selector-bar .left-section {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 0 0 auto;
+}
+
+.instance-selector-bar .center-section {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex: 1;
+    justify-content: center;
+    max-width: 800px;
+}
+
+.instance-selector-bar .right-section {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+}
+
+.instance-selector-bar .instance-label {
+    font-weight: bold;
+    font-size: 14px;
+    color: #333;
+    padding: 4px 12px;
+    background: #f5f5f5;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+}
+
+.instance-selector-bar select {
+    font-size: 13px;
+    padding: 4px 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: white;
+    min-width: 200px;
+}
+
+.instance-selector-bar .status-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: #666;
+}
+
+.instance-selector-bar .status-item .label {
+    font-weight: bold;
+    color: #333;
+}
+
+.instance-selector-bar .status-item .value {
+    padding: 2px 6px;
+    background: #f0f0f0;
+    border-radius: 3px;
+}
+
+.instance-selector-bar .status-item .value.warning {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.instance-selector-bar .status-item .value.error {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.instance-selector-bar .status-item .value.success {
+    background: #d4edda;
+    color: #155724;
+}
+
+.instance-selector-bar .btn {
+    font-size: 12px;
+    padding: 4px 10px;
+    border: 1px solid #ddd;
+    background: white;
+    border-radius: 4px;
+    cursor: pointer;
+    text-decoration: none;
+    color: #333;
+    display: inline-block;
+}
+
+.instance-selector-bar .btn:hover {
+    background: #f5f5f5;
+}
+
+.instance-selector-bar .btn-primary {
+    background: #007bff;
+    color: white;
+    border-color: #007bff;
+}
+
+.instance-selector-bar .btn-primary:hover {
+    background: #0056b3;
+}
+
+/* 페이지 컨텐츠 여백 확보 */
+body.has-instance-bar {
+    padding-top: 60px;
+}
+</style>
+
+<div class="instance-selector-bar">
+    <!-- 왼쪽: 현재 인스턴스 -->
+    <div class="left-section">
+        <span class="instance-label" id="currentInstanceLabel">로딩 중...</span>
+        
+        <!-- 관리자 모드에서만 드롭다운 표시 -->
+        {% if is_admin_mode %}
+        <select id="instanceSelector" onchange="switchInstance(this.value)">
+            <option value="">인스턴스 선택...</option>
+        </select>
+        {% endif %}
+    </div>
+    
+    <!-- 중앙: 핵심 상태 -->
+    <div class="center-section" id="instanceStatus">
+        <div class="status-item">
+            <span class="label">큐:</span>
+            <span class="value" id="statusQueue">-</span>
+        </div>
+        <div class="status-item">
+            <span class="label">업로더:</span>
+            <span class="value" id="statusUploader">-</span>
+        </div>
+        <div class="status-item">
+            <span class="label">오류:</span>
+            <span class="value" id="statusError">-</span>
+        </div>
+        <div class="status-item">
+            <span class="label">업타임:</span>
+            <span class="value" id="statusUptime">-</span>
+        </div>
+    </div>
+    
+    <!-- 오른쪽: 액션 버튼 -->
+    <div class="right-section">
+        {% if is_admin_mode %}
+        <a href="/instances" class="btn">인스턴스 관리</a>
+        <a href="/registry" class="btn">레지스트리 편집</a>
+        {% endif %}
+        <button class="btn" onclick="refreshStatus()">새로고침</button>
+    </div>
+</div>
+
+<script>
+// 현재 선택된 인스턴스 ID
+let currentInstanceId = null;
+
+// 페이지 로드 시 초기화
+document.addEventListener('DOMContentLoaded', function() {
+    document.body.classList.add('has-instance-bar');
+    initInstanceSelector();
+    loadInstanceStatus();
+    
+    // 5초마다 상태 갱신
+    setInterval(loadInstanceStatus, 5000);
+});
+
+// 인스턴스 선택기 초기화
+async function initInstanceSelector() {
+    {% if is_admin_mode %}
+    try {
+        const response = await fetch('/api/admin/instances', {
+            headers: {
+                'Authorization': 'Basic ' + btoa('admin:' + (typeof adminPassword !== 'undefined' ? adminPassword : '1212'))
+            }
+        });
+        
+        if (response.ok) {
+            const instances = await response.json();
+            const selector = document.getElementById('instanceSelector');
+            
+            instances.forEach(inst => {
+                const option = document.createElement('option');
+                option.value = inst.id;
+                option.textContent = inst.label;
+                selector.appendChild(option);
+            });
+            
+            // 첫 번째 인스턴스 자동 선택
+            if (instances.length > 0) {
+                currentInstanceId = instances[0].id;
+                selector.value = currentInstanceId;
+                document.getElementById('currentInstanceLabel').textContent = instances[0].label;
+            }
+        }
+    } catch (error) {
+        console.error('인스턴스 목록 로딩 실패:', error);
+    }
+    {% else %}
+    // 키오스크 모드: 현재 인스턴스만 표시
+    currentInstanceId = 'local';
+    document.getElementById('currentInstanceLabel').textContent = '로컬 인스턴스';
+    {% endif %}
+}
+
+// 인스턴스 전환
+function switchInstance(instanceId) {
+    if (!instanceId) return;
+    
+    currentInstanceId = instanceId;
+    
+    // 라벨 업데이트
+    const selector = document.getElementById('instanceSelector');
+    const selectedOption = selector.options[selector.selectedIndex];
+    document.getElementById('currentInstanceLabel').textContent = selectedOption.textContent;
+    
+    // 상태 갱신
+    loadInstanceStatus();
+}
+
+// 인스턴스 상태 로드
+async function loadInstanceStatus() {
+    try {
+        let statusUrl = '/api/status';
+        
+        {% if is_admin_mode %}
+        // 관리자 모드: 선택된 인스턴스의 상태 조회
+        if (currentInstanceId && currentInstanceId !== 'local') {
+            statusUrl = `/api/admin/instances/${currentInstanceId}/status`;
+        }
+        {% endif %}
+        
+        const response = await fetch(statusUrl, {
+            headers: {
+                'Authorization': 'Basic ' + btoa('admin:' + (typeof adminPassword !== 'undefined' ? adminPassword : '1212'))
+            }
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            updateStatusDisplay(data);
+        } else {
+            showOfflineStatus();
+        }
+    } catch (error) {
+        console.error('상태 로딩 실패:', error);
+        showOfflineStatus();
+    }
+}
+
+// 상태 표시 업데이트
+function updateStatusDisplay(data) {
+    // 큐 상태
+    const queue = data.queue || data.data?.queue;
+    if (queue) {
+        const queueText = `${queue.total || 0} (신규: ${queue.new || 0}, 대기: ${queue.pendingUpload || 0})`;
+        document.getElementById('statusQueue').textContent = queueText;
+        
+        // 에러 건수
+        const errorValue = document.getElementById('statusError');
+        errorValue.textContent = queue.error || 0;
+        errorValue.className = 'value';
+        if (queue.error > 0) {
+            errorValue.classList.add('error');
+        }
+    }
+    
+    // 업로더 상태
+    const uploaderValue = document.getElementById('statusUploader');
+    uploaderValue.textContent = '정상';
+    uploaderValue.className = 'value success';
+    
+    // 업타임
+    const uptime = data.uptimeSec || data.data?.uptimeSec || 0;
+    const hours = Math.floor(uptime / 3600);
+    const minutes = Math.floor((uptime % 3600) / 60);
+    document.getElementById('statusUptime').textContent = `${hours}h ${minutes}m`;
+}
+
+// 오프라인 상태 표시
+function showOfflineStatus() {
+    document.getElementById('statusQueue').textContent = '오프라인';
+    document.getElementById('statusUploader').textContent = '오프라인';
+    document.getElementById('statusError').textContent = '-';
+    document.getElementById('statusUptime').textContent = '-';
+    
+    document.getElementById('statusQueue').className = 'value error';
+    document.getElementById('statusUploader').className = 'value error';
+}
+
+// 수동 새로고침
+function refreshStatus() {
+    loadInstanceStatus();
+    
+    // 피드백 표시
+    const btn = event.target;
+    const originalText = btn.textContent;
+    btn.textContent = '갱신 중...';
+    btn.disabled = true;
+    
+    setTimeout(() => {
+        btn.textContent = originalText;
+        btn.disabled = false;
+    }, 1000);
+}
+</script>
+

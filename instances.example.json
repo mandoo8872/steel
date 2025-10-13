@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "instances": [
+    {
+      "id": "kiosk-1",
+      "label": "스캔 키오스크 1",
+      "baseUrl": "http://192.168.1.10:8000",
+      "role": "kiosk",
+      "auth": {
+        "type": "basic",
+        "username": "admin",
+        "password": "1212"
+      }
+    },
+    {
+      "id": "kiosk-2",
+      "label": "스캔 키오스크 2",
+      "baseUrl": "http://192.168.1.11:8000",
+      "role": "kiosk",
+      "auth": {
+        "type": "basic",
+        "username": "admin",
+        "password": "1212"
+      }
+    }
+  ]
+}
+

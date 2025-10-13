@@ -1,0 +1,437 @@
+{% extends "base.html" %}
+
+{% block title %}오류 관리 - QR 스캔 관리 시스템{% endblock %}
+
+{% block extra_head %}
+<!-- PDF 미리보기는 브라우저 내장 기능 사용 -->
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">오류 관리</h1>
+</div>
+
+<!-- DB 오류 문서 -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">오류 상태 문서</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>파일명</th>
+                        <th>오류 메시지</th>
+                        <th>QR 정보</th>
+                        <th>생성일시</th>
+                        <th>작업</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for doc in error_docs %}
+                    <tr>
+                        <td>{{ doc.id }}</td>
+                        <td><small>{{ doc.original_filename }}</small></td>
+                        <td><small class="text-danger">{{ doc.error_message or '-' }}</small></td>
+                        <td>
+                            {% if doc.qr_values %}
+                                {% set qr_list = doc.qr_values|from_json %}
+                                {% for qr in qr_list %}
+                                    <code>{{ qr }}</code><br>
+                                {% endfor %}
+                            {% else %}
+                                <span class="text-muted">없음</span>
+                            {% endif %}
+                        </td>
+                        <td><small>{{ doc.created_at.strftime('%Y-%m-%d %H:%M') }}</small></td>
+                        <td>
+                            <button class="btn btn-sm btn-primary" onclick="showReprocessModal('{{ doc.file_path }}', '{{ doc.qr_values }}')">
+                                <i class="bi bi-arrow-repeat"></i> 재처리
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        
+        {% if not error_docs %}
+        <p class="text-center text-muted mb-0">오류 상태의 문서가 없습니다.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 오류 폴더 파일 -->
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">오류 폴더 파일</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover">
+                <thead>
+                    <tr>
+                        <th>파일명</th>
+                        <th>오류 메시지</th>
+                        <th>이동 시간</th>
+                        <th>작업</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for file in error_files %}
+                    <tr>
+                        <td><small>{{ file.name }}</small></td>
+                        <td><small class="text-danger">{{ file.error_message or '-' }}</small></td>
+                        <td><small>{{ file.moved_at or '-' }}</small></td>
+                        <td>
+                            <button class="btn btn-sm btn-primary" onclick="showReprocessModal('{{ file.path }}', '')">
+                                <i class="bi bi-arrow-repeat"></i> 재처리
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        
+        {% if not error_files %}
+        <p class="text-center text-muted mb-0">오류 폴더에 파일이 없습니다.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 재처리 모달 -->
+<div class="modal fade" id="reprocessModal" tabindex="-1">
+    <div class="modal-dialog modal-xl" style="max-width: 90vw; max-height: 90vh;">
+        <div class="modal-content" style="height: 85vh;">
+            <form id="reprocessForm" class="d-flex flex-column h-100">
+                <div class="modal-header">
+                    <h5 class="modal-title">파일 재처리</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body flex-grow-1" style="overflow: hidden;">
+                    <div class="row h-100">
+                        <!-- 왼쪽: PDF 미리보기 -->
+                        <div class="col-md-8 h-100">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <h6 class="mb-0">PDF 미리보기</h6>
+                            </div>
+                            
+                            <div class="border rounded h-100" style="overflow: auto; background-color: #f8f9fa;">
+                                <div id="pdfContainer" class="text-center p-3">
+                                    <div class="spinner-border text-primary" role="status">
+                                        <span class="visually-hidden">PDF 로드 중...</span>
+                                    </div>
+                                    <p class="mt-2 text-muted">PDF를 로드하고 있습니다...</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 오른쪽: 재처리 폼 -->
+                        <div class="col-md-4 d-flex flex-column h-100">
+                            <div class="flex-grow-1">
+                                <p>이 파일을 재처리하려면 운송번호를 입력하세요.</p>
+                                
+                                <div id="qrSuggestions" class="alert alert-info" style="display: none;">
+                                    <small>검출된 QR 코드:</small>
+                                    <div id="qrList"></div>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label for="transportNo" class="form-label">운송번호 (14자리)</label>
+                                    <input type="text" class="form-control" id="transportNo" name="transport_no" 
+                                           pattern="\d{8}-\d{6}" maxlength="15" required
+                                           placeholder="예: 20250929-000001">
+                                    <div class="form-text">YYYYMMDD-NNNNNN 형식으로 자동 포맷됩니다.</div>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label class="form-label">파일 정보</label>
+                                    <div class="card bg-light">
+                                        <div class="card-body p-2">
+                                            <small id="fileInfo" class="text-muted">파일 정보를 로드 중...</small>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <input type="hidden" id="filePath" name="file_path">
+                            </div>
+                            
+                            <!-- 오른쪽 하단 버튼 -->
+                            <div class="mt-auto pt-3 border-top">
+                                <div class="d-flex gap-2 justify-content-end">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+                                    <button type="submit" class="btn btn-primary">재처리</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // JSON 파싱 필터
+    function from_json(str) {
+        try {
+            return JSON.parse(str);
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function showReprocessModal(filePath, qrValues) {
+        document.getElementById('filePath').value = filePath;
+        
+        // 파일명 추출
+        const filename = filePath.split('/').pop();
+        
+        // QR 제안 표시
+        if (qrValues) {
+            const qrs = from_json(qrValues);
+            if (qrs.length > 0) {
+                document.getElementById('qrSuggestions').style.display = 'block';
+                const qrList = document.getElementById('qrList');
+                qrList.innerHTML = '';
+                
+                qrs.forEach(qr => {
+                    const btn = document.createElement('button');
+                    btn.className = 'btn btn-sm btn-outline-primary me-2 mb-2';
+                    btn.textContent = qr;
+                    btn.onclick = function() {
+                        const input = document.getElementById('transportNo');
+                        input.value = formatTransportNo(qr);
+                        // input 이벤트 트리거
+                        input.dispatchEvent(new Event('input', { bubbles: true }));
+                    };
+                    qrList.appendChild(btn);
+                });
+            }
+        } else {
+            document.getElementById('qrSuggestions').style.display = 'none';
+        }
+        
+        // PDF 미리보기 자동 로드
+        loadPDFPreview(filePath, filename);
+        
+        new bootstrap.Modal(document.getElementById('reprocessModal')).show();
+    }
+
+    // 운송번호 포맷팅 함수 (8자리-6자리 형식)
+    function formatTransportNo(value) {
+        // 숫자만 추출
+        const cleaned = value.replace(/[^0-9]/g, '');
+        
+        // 14자리로 제한
+        const limited = cleaned.substring(0, 14);
+        
+        // 8자리-6자리 형식으로 포맷팅
+        if (limited.length > 8) {
+            return limited.substring(0, 8) + '-' + limited.substring(8);
+        } else {
+            return limited;
+        }
+    }
+    
+    // 운송번호 입력 시 자동 포맷팅
+    document.getElementById('transportNo').addEventListener('input', function(e) {
+        const cursorPosition = e.target.selectionStart;
+        const oldValue = e.target.value;
+        const oldLength = oldValue.replace(/[^0-9]/g, '').length;
+        
+        // 포맷팅 적용
+        const formatted = formatTransportNo(e.target.value);
+        e.target.value = formatted;
+        
+        // 커서 위치 조정 (하이픈 추가/제거 시 커서가 자연스럽게 이동)
+        const newLength = formatted.replace(/[^0-9]/g, '').length;
+        
+        if (oldLength < newLength || oldLength === newLength) {
+            // 숫자 입력 또는 유지
+            if (cursorPosition === 9 && formatted.length >= 9 && formatted[8] === '-') {
+                // 하이픈 바로 뒤에서 입력한 경우
+                e.target.setSelectionRange(cursorPosition + 1, cursorPosition + 1);
+            } else if (cursorPosition <= 8) {
+                e.target.setSelectionRange(cursorPosition, cursorPosition);
+            } else {
+                e.target.setSelectionRange(cursorPosition + (formatted.length - oldValue.length), cursorPosition + (formatted.length - oldValue.length));
+            }
+        }
+    });
+    
+    // 운송번호 붙여넣기 시 자동 포맷팅
+    document.getElementById('transportNo').addEventListener('paste', function(e) {
+        e.preventDefault();
+        
+        // 클립보드에서 텍스트 가져오기
+        const pastedText = (e.clipboardData || window.clipboardData).getData('text');
+        
+        // 포맷팅 적용
+        e.target.value = formatTransportNo(pastedText);
+        
+        // input 이벤트 트리거 (validation 등)
+        e.target.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    
+    // 재처리 폼 제출
+    document.getElementById('reprocessForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const formData = new FormData(this);
+        const filePath = formData.get('file_path');
+        let transportNo = formData.get('transport_no');
+        
+        // 하이픈 제거 (서버는 14자리 숫자만 받음)
+        transportNo = transportNo.replace(/[^0-9]/g, '');
+        
+        // formData 업데이트
+        formData.set('transport_no', transportNo);
+        
+        try {
+            const response = await fetch(`/reprocess/${encodeURIComponent(filePath)}`, {
+                method: 'POST',
+                body: formData
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                alert('재처리가 시작되었습니다.');
+                location.reload();
+            } else {
+                alert('오류: ' + result.message);
+            }
+        } catch (error) {
+            alert('요청 처리 중 오류가 발생했습니다.');
+        }
+    });
+
+    // Jinja2 필터를 JavaScript 함수로 정의
+    window.from_json = from_json;
+    
+    // PDF 미리보기 관련 변수 (브라우저 내장 뷰어 사용)
+    
+    // 재처리 함수 정의
+    function reprocess(filePath, filename) {
+        showReprocessModal(filePath, null);
+        loadPDFPreview(filePath, filename);
+    }
+    
+    // PDF 미리보기 로드
+    async function loadPDFPreview(filePath, filename) {
+        const pdfContainer = document.getElementById('pdfContainer');
+        const fileInfo = document.getElementById('fileInfo');
+        
+        // 파일 정보 업데이트
+        fileInfo.innerHTML = `
+            <strong>파일명:</strong> ${filename}<br>
+            <strong>경로:</strong> ${filePath}
+        `;
+        
+        try {
+            // 브라우저 내장 PDF viewer 사용 (더 안정적)
+            const pdfUrl = `/api/pdf-preview?file=${encodeURIComponent(filePath)}`;
+            
+            pdfContainer.innerHTML = `
+                <iframe 
+                    src="${pdfUrl}" 
+                    style="width: 100%; height: calc(85vh - 180px); border: none;"
+                    title="PDF 미리보기">
+                </iframe>
+            `;
+            
+            console.log(`PDF 미리보기 로드 완료: ${filename}`);
+            
+        } catch (error) {
+            console.error('PDF 로드 오류:', error);
+            pdfContainer.innerHTML = `
+                <div class="alert alert-warning">
+                    <i class="bi bi-file-pdf"></i>
+                    <p class="mb-0">PDF 미리보기를 사용할 수 없습니다.</p>
+                    <small>파일명: ${filename}</small>
+                    <div class="mt-2">
+                        <a href="/api/pdf-preview?file=${encodeURIComponent(filePath)}" 
+                           target="_blank" 
+                           class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-external-link"></i> 새 창에서 열기
+                        </a>
+                        <button class="btn btn-sm btn-outline-secondary ms-2" onclick="loadPDFPreview('${filePath}', '${filename}')">
+                            <i class="bi bi-arrow-clockwise"></i> 다시 시도
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+    }
+    
+    // 브라우저 내장 PDF 뷰어 사용으로 별도 렌더링 함수 불필요
+    
+    // 오류 문서 목록을 API로 로드
+    function loadErrorDocuments() {
+        fetch('/api/errors')
+            .then(response => response.json())
+            .then(errorDocs => {
+                const tbody = document.querySelector('table tbody');
+                
+                if (errorDocs.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">오류 상태의 문서가 없습니다.</td></tr>';
+                } else {
+                    tbody.innerHTML = errorDocs.map(doc => `
+                        <tr>
+                            <td>
+                                <span class="badge bg-danger">오류</span>
+                            </td>
+                            <td>
+                                <small>${doc.original_filename}</small>
+                                <br>
+                                <small class="text-muted">${formatFileSize(doc.file_size || 0)}</small>
+                            </td>
+                            <td>
+                                <small class="text-danger">${doc.error_message || '처리 오류'}</small>
+                            </td>
+                            <td>
+                                ${doc.transport_no ? `<code>${doc.transport_no}</code>` : '<span class="text-muted">-</span>'}
+                            </td>
+                            <td>
+                                <small>${doc.created_at ? new Date(doc.created_at).toLocaleString('ko-KR') : '-'}</small>
+                                <br>
+                                <small class="text-muted">수정: ${doc.modified_at ? new Date(doc.modified_at).toLocaleString('ko-KR') : '-'}</small>
+                            </td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-warning" onclick="showReprocessModal('${doc.file_path}', '${doc.original_filename}')">
+                                    <i class="bi bi-arrow-clockwise"></i> 재처리
+                                </button>
+                            </td>
+                        </tr>
+                    `).join('');
+                }
+            })
+            .catch(error => {
+                console.error('오류 문서 로드 실패:', error);
+                const tbody = document.querySelector('table tbody');
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">오류 문서 로드 중 문제가 발생했습니다.</td></tr>';
+            });
+    }
+    
+    // 파일 크기 포맷팅 함수
+    function formatFileSize(bytes) {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+    
+    // 페이지 로드 시 오류 문서 로드
+    document.addEventListener('DOMContentLoaded', loadErrorDocuments);
+    
+    // 5초마다 자동 새로고침
+    setInterval(loadErrorDocuments, 5000);
+</script>
+{% endblock %}

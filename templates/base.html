@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}QR 스캔 관리 시스템{% endblock %}</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+        .sidebar {
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            z-index: 100;
+            padding: 48px 0 0;
+            box-shadow: inset -1px 0 0 rgba(0, 0, 0, .1);
+        }
+        .sidebar-sticky {
+            position: sticky;
+            top: 48px;
+            height: calc(100vh - 48px);
+            padding-top: .5rem;
+            overflow-x: hidden;
+            overflow-y: auto;
+        }
+        .sidebar .nav-link {
+            color: #333;
+            padding: .5rem 1rem;
+        }
+        .sidebar .nav-link.active {
+            color: #2470dc;
+            background-color: #e7f1ff;
+            border-radius: 0.25rem;
+        }
+        .sidebar .nav-link:hover {
+            color: #2470dc;
+        }
+        .navbar-brand {
+            padding-top: .75rem;
+            padding-bottom: .75rem;
+        }
+        .navbar {
+            box-shadow: 0 .5rem 1rem rgba(0,0,0,.05);
+        }
+        .status-badge {
+            font-size: 0.875rem;
+            padding: 0.25rem 0.5rem;
+        }
+        .error-count {
+            background-color: #dc3545;
+            color: white;
+            border-radius: 50%;
+            padding: 0.25rem 0.5rem;
+            font-size: 0.75rem;
+            margin-left: 0.5rem;
+        }
+        main {
+            margin-left: 240px;
+            padding-top: 48px;
+        }
+        @media (max-width: 768px) {
+            .sidebar {
+                display: none;
+            }
+            main {
+                margin-left: 0;
+            }
+        }
+    </style>
+    
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <script>
+        // 전역 변수
+        const adminPassword = '{{ config.system.admin_password if config else "1212" }}';
+    </script>
+    
+    <!-- 네비게이션 바 -->
+    <nav class="navbar navbar-dark bg-dark fixed-top">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">
+                <i class="bi bi-qr-code-scan"></i> QR 스캔 관리 시스템
+            </a>
+            <div class="d-flex">
+                <span class="navbar-text me-3">
+                    <i class="bi bi-clock"></i> <span id="current-time"></span>
+                </span>
+                <a href="/logout" class="btn btn-outline-light btn-sm">
+                    <i class="bi bi-box-arrow-right"></i> 로그아웃
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 사이드바 -->
+    <nav class="col-md-3 col-lg-2 d-md-block bg-light sidebar">
+        <div class="sidebar-sticky pt-3">
+            <ul class="nav flex-column">
+                <li class="nav-item">
+                    <a class="nav-link {% if request.url.path == '/' %}active{% endif %}" href="/">
+                        <i class="bi bi-speedometer2"></i> 대시보드
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {% if request.url.path == '/documents' %}active{% endif %}" href="/documents">
+                        <i class="bi bi-file-earmark-pdf"></i> 문서 목록
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {% if request.url.path == '/errors' %}active{% endif %}" href="/errors">
+                        <i class="bi bi-exclamation-triangle"></i> 오류 관리
+                        <span class="error-count" id="error-count" style="display: none;">0</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {% if request.url.path == '/logs' %}active{% endif %}" href="/logs">
+                        <i class="bi bi-journal-text"></i> 처리 로그
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {% if request.url.path == '/settings' %}active{% endif %}" href="/settings">
+                        <i class="bi bi-gear"></i> 설정
+                    </a>
+                </li>
+            </ul>
+
+            <h6 class="sidebar-heading d-flex justify-content-between align-items-center px-3 mt-4 mb-1 text-muted">
+                <span>빠른 작업</span>
+            </h6>
+            <ul class="nav flex-column mb-2">
+                <li class="nav-item">
+                    <a class="nav-link" href="#" onclick="forceBatch()">
+                        <i class="bi bi-play-circle"></i> 지금 배치 실행
+                    </a>
+                </li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- 메인 콘텐츠 -->
+    <main role="main" class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+        <div class="container-fluid mt-4">
+            {% block content %}{% endblock %}
+        </div>
+    </main>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    
+    <script>
+        // 현재 시간 표시
+        function updateTime() {
+            const now = new Date();
+            const timeStr = now.toLocaleString('ko-KR');
+            document.getElementById('current-time').textContent = timeStr;
+        }
+        setInterval(updateTime, 1000);
+        updateTime();
+
+        // 오류 개수 업데이트
+        function updateErrorCount() {
+            fetch('/api/stats')
+                .then(response => response.json())
+                .then(data => {
+                    const errorCount = data.total.error;
+                    const errorBadge = document.getElementById('error-count');
+                    if (errorCount > 0) {
+                        errorBadge.textContent = errorCount;
+                        errorBadge.style.display = 'inline-block';
+                    } else {
+                        errorBadge.style.display = 'none';
+                    }
+                });
+        }
+        updateErrorCount();
+        setInterval(updateErrorCount, 30000); // 30초마다 업데이트
+
+        // 강제 배치 실행
+        function forceBatch() {
+            if (confirm('지금 배치 처리를 실행하시겠습니까?')) {
+                fetch('/batch/process', { method: 'POST' })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            alert('배치 처리가 시작되었습니다.');
+                        } else {
+                            alert('오류: ' + data.message);
+                        }
+                    });
+            }
+        }
+    </script>
+    
+    {% block extra_js %}{% endblock %}
+</body>
+</html>
